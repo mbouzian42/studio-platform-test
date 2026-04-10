@@ -422,25 +422,28 @@ export async function createBeatWithFiles(
   try {
     // Step 2: Upload cover image to beat-previews
     const coverPath = `${basePath}/cover${coverExt}`;
+    const coverBuffer = await coverFile.arrayBuffer();
     const { error: coverErr } = await supabase.storage
       .from("beat-previews")
-      .upload(coverPath, coverFile, { upsert: true });
+      .upload(coverPath, coverBuffer, { upsert: true, contentType: coverFile.type });
     if (coverErr) throw new Error(`Cover upload: ${coverErr.message}`);
 
     // Step 3: Upload full audio to beat-files (private)
     const audioPath = `${basePath}/audio${audioExt}`;
+    const audioBuffer = await audioFile.arrayBuffer();
     const { error: audioErr } = await supabase.storage
       .from("beat-files")
-      .upload(audioPath, audioFile, { upsert: true });
+      .upload(audioPath, audioBuffer, { upsert: true, contentType: audioFile.type });
     if (audioErr) throw new Error(`Audio upload: ${audioErr.message}`);
 
     // Step 4: Upload preview audio to beat-previews (public preview)
     const previewToUpload = previewFile || audioFile;
     const previewExt = getExtension(previewToUpload.name);
     const previewPath = `${basePath}/preview${previewExt}`;
+    const previewBuffer = await previewToUpload.arrayBuffer();
     const { error: previewErr } = await supabase.storage
       .from("beat-previews")
-      .upload(previewPath, previewToUpload, { upsert: true });
+      .upload(previewPath, previewBuffer, { upsert: true, contentType: previewToUpload.type });
     if (previewErr) throw new Error(`Preview upload: ${previewErr.message}`);
 
     // Step 5: Get public URLs
