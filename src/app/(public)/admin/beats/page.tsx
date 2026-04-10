@@ -69,12 +69,8 @@ export default function AdminBeatsCatalogPage() {
       toast({ title: "Erreur", description: result.error, variant: "error" });
       return;
     }
-    setBeats((prev) =>
-      prev.map((b) =>
-        b.id === beatId ? { ...b, is_published: false } : b,
-      ),
-    );
-    toast({ title: "Beat retiré de la marketplace", variant: "success" });
+    setBeats((prev) => prev.filter((b) => b.id !== beatId));
+    toast({ title: "Beat supprimé avec succès", variant: "success" });
   }
 
   async function handleSavePrice(beatId: string) {

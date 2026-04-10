@@ -86,12 +86,32 @@ export async function adminDeleteBeat(beatId: string): Promise<ActionResponse> {
   const { supabase, isAdmin } = await verifyAdmin();
   if (!isAdmin) return { success: false, error: "Accès refusé" };
 
-  // Unpublish instead of hard delete (preserves purchase history)
+  // Get the beat to potentially delete its files
+  const { data: beat } = await supabase
+    .from("beats")
+    .select("beatmaker_id")
+    .eq("id", beatId)
+    .single<{ beatmaker_id: string }>();
+
+  // Attempt hard delete. It will fail with a foreign key violation if there are purchases.
   const { error } = await supabase
     .from("beats")
-    .update({ is_published: false })
+    .delete()
     .eq("id", beatId);
 
-  if (error) return { success: false, error: error.message };
+  if (error) {
+    if (error.code === "23503") { // foreign_key_violation
+      return { success: false, error: "Impossible de supprimer ce beat car il a déjà des ventes. Vous pouvez le dépublier à la place." };
+    }
+    return { success: false, error: error.message };
+  }
+
+  // Optionally cleanup files from storage, ignore errors if it fails
+  if (beat) {
+    const basePath = `${beat.beatmaker_id}/${beatId}`;
+    supabase.storage.from("beat-previews").remove([`${basePath}/cover.jpg`, `${basePath}/cover.png`, `${basePath}/cover.webp`, `${basePath}/preview.mp3`, `${basePath}/preview.wav`]).catch(() => {});
+    supabase.storage.from("beat-files").remove([`${basePath}/audio.wav`, `${basePath}/audio.mp3`]).catch(() => {});
+  }
+
   return { success: true, data: undefined };
 }
