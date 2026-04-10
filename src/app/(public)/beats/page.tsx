@@ -6,7 +6,6 @@ import { Music } from "lucide-react";
 import { getPublishedBeats } from "@/actions/beats";
 import { BeatSwipeCard } from "@/components/beats/beat-swipe-card";
 import { BeatsOnboarding } from "@/components/beats/beats-onboarding";
-import { MOCK_BEATS } from "@/lib/mock-beats";
 import type { Beat } from "@/types";
 
 export default function BeatsPage() {
@@ -26,10 +25,8 @@ export default function BeatsPage() {
 
     async function load() {
       const result = await getPublishedBeats();
-      if (result.success && result.data.length > 0) {
+      if (result.success) {
         setBeats(result.data);
-      } else {
-        setBeats(MOCK_BEATS);
       }
       setLoading(false);
     }
