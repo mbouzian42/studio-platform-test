@@ -1,35 +1,38 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
-import { useRouter } from "next/navigation";
 import { Music } from "lucide-react";
-import { getPublishedBeats } from "@/actions/beats";
+import { getPublishedBeats, addBeatToFavorites } from "@/actions/beats";
 import { BeatSwipeCard } from "@/components/beats/beat-swipe-card";
 import { BeatsOnboarding } from "@/components/beats/beats-onboarding";
-import { MOCK_BEATS } from "@/lib/mock-beats";
+import { useAudioStore } from "@/stores/audio-store";
+import { toast } from "@/components/ui/toaster";
 import type { Beat } from "@/types";
 
 export default function BeatsPage() {
-  const router = useRouter();
+  const play = useAudioStore((s) => s.play);
   const [beats, setBeats] = useState<Beat[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [exitDirection, setExitDirection] = useState<"left" | "right" | null>(null);
   const animatingRef = useRef(false);
+  const authFavoriteHintShown = useRef(false);
   const [loading, setLoading] = useState(true);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [playbackUnlocked, setPlaybackUnlocked] = useState(false);
 
   useEffect(() => {
-    // Check localStorage after mount (avoids SSR/hydration mismatch)
     if (!localStorage.getItem("studio_beats_onboarded")) {
       setShowOnboarding(true);
+    } else {
+      setPlaybackUnlocked(true);
     }
+  }, []);
 
+  useEffect(() => {
     async function load() {
       const result = await getPublishedBeats();
-      if (result.success && result.data.length > 0) {
+      if (result.success) {
         setBeats(result.data);
-      } else {
-        setBeats(MOCK_BEATS);
       }
       setLoading(false);
     }
@@ -39,33 +42,64 @@ export default function BeatsPage() {
   const handleOnboardingComplete = useCallback(() => {
     localStorage.setItem("studio_beats_onboarded", "true");
     setShowOnboarding(false);
+    setPlaybackUnlocked(true);
   }, []);
 
-  const animateAndAdvance = useCallback(
-    (direction: "left" | "right") => {
-      if (animatingRef.current) return;
-      animatingRef.current = true;
-      setExitDirection(direction);
+  useEffect(() => {
+    if (!playbackUnlocked || loading || showOnboarding) return;
+    const beat = beats[currentIndex];
+    if (!beat?.audio_preview_url) return;
+    play(beat.id, beat.audio_preview_url);
+  }, [playbackUnlocked, loading, showOnboarding, currentIndex, beats, play]);
 
-      setTimeout(() => {
-        if (direction === "right" && beats[currentIndex]) {
-          router.push(`/beats/${beats[currentIndex].slug}`);
-        }
-        setCurrentIndex((i) => i + 1);
-        setExitDirection(null);
-        animatingRef.current = false;
-      }, 400);
-    },
-    [beats, currentIndex, router],
-  );
+  const animateAndAdvance = useCallback((direction: "left" | "right") => {
+    if (animatingRef.current) return;
+    animatingRef.current = true;
+    setExitDirection(direction);
+
+    setTimeout(() => {
+      setCurrentIndex((i) => i + 1);
+      setExitDirection(null);
+      animatingRef.current = false;
+    }, 400);
+  }, []);
 
   const handleSwipeLeft = useCallback(() => {
     animateAndAdvance("left");
   }, [animateAndAdvance]);
 
   const handleSwipeRight = useCallback(() => {
+    const beat = beats[currentIndex];
+    if (beat) {
+      void addBeatToFavorites(beat.id).then((result) => {
+        if (result.success) {
+          toast({
+            title: "Ajouté aux favoris",
+            description: "Retrouve tes sélections dans Mon compte → Favoris.",
+            variant: "success",
+          });
+          return;
+        }
+        if (result.error.includes("Connexion")) {
+          if (!authFavoriteHintShown.current) {
+            authFavoriteHintShown.current = true;
+            toast({
+              title: "Connexion requise",
+              description: result.error,
+              variant: "error",
+            });
+          }
+          return;
+        }
+        toast({
+          title: "Favoris",
+          description: result.error,
+          variant: "error",
+        });
+      });
+    }
     animateAndAdvance("right");
-  }, [animateAndAdvance]);
+  }, [animateAndAdvance, beats, currentIndex]);
 
   if (loading) {
     return (
@@ -75,7 +109,6 @@ export default function BeatsPage() {
     );
   }
 
-  // Empty state
   if (beats.length === 0) {
     return (
       <div className="flex min-h-[80vh] flex-col items-center justify-center px-4 text-center">
@@ -98,7 +131,6 @@ export default function BeatsPage() {
     );
   }
 
-  // All beats swiped
   if (currentIndex >= beats.length) {
     return (
       <div className="flex min-h-[80vh] flex-col items-center justify-center px-4 text-center">
@@ -128,8 +160,11 @@ export default function BeatsPage() {
         <BeatsOnboarding onComplete={handleOnboardingComplete} />
       )}
 
-      <div className="beat-swipe-screen">
-        {/* Counter — top right */}
+      <div
+        className="beat-swipe-screen"
+        onPointerDownCapture={() => setPlaybackUnlocked(true)}
+        role="presentation"
+      >
         <div
           className="absolute left-0 right-0 top-0 z-10 flex items-center justify-end"
           style={{ padding: "var(--space-4, 16px)" }}
@@ -139,7 +174,6 @@ export default function BeatsPage() {
           </span>
         </div>
 
-        {/* Swipe hint */}
         <div className="swipe-hint">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <polyline points="15 18 9 12 15 6" />
@@ -150,9 +184,8 @@ export default function BeatsPage() {
           </svg>
         </div>
 
-        {/* Card stack */}
         <div className="beat-card-container">
-          <div className="relative" style={{ width: "100%", maxWidth: 340, height: 420 }}>
+          <div className="relative" style={{ width: "100%", maxWidth: 340, height: 480 }}>
             <BeatSwipeCard
               key={beats[currentIndex].id}
               beat={beats[currentIndex]}
@@ -164,9 +197,7 @@ export default function BeatsPage() {
           </div>
         </div>
 
-        {/* Action buttons — prototype style */}
         <div className="swipe-actions">
-          {/* Skip */}
           <button
             type="button"
             onClick={handleSwipeLeft}
@@ -179,12 +210,11 @@ export default function BeatsPage() {
             </svg>
           </button>
 
-          {/* Like */}
           <button
             type="button"
             onClick={handleSwipeRight}
             className="swipe-btn swipe-btn-like"
-            aria-label="Voir les détails de la prod"
+            aria-label="Ajouter aux favoris et suivant"
           >
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />

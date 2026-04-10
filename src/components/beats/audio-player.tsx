@@ -1,8 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useCallback } from "react";
-import { Play, Pause, Volume2 } from "lucide-react";
+import { Play, Pause } from "lucide-react";
 import { useAudioStore } from "@/stores/audio-store";
+
+/** Marketplace preview length (full file may be longer in storage). */
+const PREVIEW_MAX_SECONDS = 30;
 
 interface AudioPlayerProps {
   beatId: string;
@@ -37,6 +40,22 @@ export function AudioPlayer({ beatId, previewUrl, compact }: AudioPlayerProps) {
     }
   }, [isActive, isPlaying]);
 
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio || !isActive) return;
+
+    const capPreview = () => {
+      if (audio.currentTime >= PREVIEW_MAX_SECONDS) {
+        audio.currentTime = PREVIEW_MAX_SECONDS;
+        audio.pause();
+        pause();
+      }
+    };
+
+    audio.addEventListener("timeupdate", capPreview);
+    return () => audio.removeEventListener("timeupdate", capPreview);
+  }, [isActive, pause]);
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
@@ -60,13 +79,18 @@ export function AudioPlayer({ beatId, previewUrl, compact }: AudioPlayerProps) {
 
   const handleTimeUpdate = useCallback(() => {
     if (audioRef.current && isActive) {
-      setCurrentTime(audioRef.current.currentTime);
+      setCurrentTime(
+        Math.min(audioRef.current.currentTime, PREVIEW_MAX_SECONDS),
+      );
     }
   }, [isActive, setCurrentTime]);
 
   const handleLoadedMetadata = useCallback(() => {
     if (audioRef.current && isActive) {
-      setDuration(audioRef.current.duration);
+      const d = audioRef.current.duration;
+      setDuration(
+        Number.isFinite(d) ? Math.min(d, PREVIEW_MAX_SECONDS) : PREVIEW_MAX_SECONDS,
+      );
     }
   }, [isActive, setDuration]);
 
@@ -75,15 +99,25 @@ export function AudioPlayer({ beatId, previewUrl, compact }: AudioPlayerProps) {
       if (!audioRef.current || !isActive) return;
       const rect = e.currentTarget.getBoundingClientRect();
       const ratio = (e.clientX - rect.left) / rect.width;
-      audioRef.current.currentTime = ratio * audioRef.current.duration;
+      const d = audioRef.current.duration;
+      const maxT = Math.min(
+        Number.isFinite(d) ? d : PREVIEW_MAX_SECONDS,
+        PREVIEW_MAX_SECONDS,
+      );
+      audioRef.current.currentTime = ratio * maxT;
     },
     [isActive],
   );
 
-  const progress = isActive && duration > 0 ? (currentTime / duration) * 100 : 0;
+  const displayTime = isActive ? Math.min(currentTime, PREVIEW_MAX_SECONDS) : 0;
+  const displayDuration =
+    isActive && duration > 0 ? Math.min(duration, PREVIEW_MAX_SECONDS) : PREVIEW_MAX_SECONDS;
+  const progress =
+    isActive && displayDuration > 0 ? (displayTime / displayDuration) * 100 : 0;
   const formatTime = (s: number) => {
-    const m = Math.floor(s / 60);
-    const sec = Math.floor(s % 60);
+    const t = Math.min(s, PREVIEW_MAX_SECONDS);
+    const m = Math.floor(t / 60);
+    const sec = Math.floor(t % 60);
     return `${m}:${String(sec).padStart(2, "0")}`;
   };
 
@@ -131,8 +165,8 @@ export function AudioPlayer({ beatId, previewUrl, compact }: AudioPlayerProps) {
 
             {/* Time */}
             <span className="flex-shrink-0 font-mono text-xs text-text-muted">
-              {isActive ? formatTime(currentTime) : "0:00"} /{" "}
-              {isActive && duration > 0 ? formatTime(duration) : "0:30"}
+              {isActive ? formatTime(displayTime) : "0:00"} /{" "}
+              {formatTime(displayDuration)}
             </span>
           </>
         )}

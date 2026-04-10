@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
+import { checkAdminBeatsSectionAccess } from "@/actions/admin";
 import { createBeatWithFiles } from "@/actions/beats";
 import { BeatFileUploader } from "@/components/beats/beat-file-uploader";
 import { toast } from "@/components/ui/toaster";
@@ -18,8 +19,9 @@ const KEYS = [
   "Cm", "C#m", "Dm", "D#m", "Em", "Fm", "F#m", "Gm", "G#m", "Am", "A#m", "Bm",
 ];
 
-export default function BeatUploadPage() {
+export default function AdminBeatUploadPage() {
   const router = useRouter();
+  const [accessOk, setAccessOk] = useState(false);
 
   const [title, setTitle] = useState("");
   const [bpm, setBpm] = useState(140);
@@ -33,6 +35,18 @@ export default function BeatUploadPage() {
   const [coverFile, setCoverFile] = useState<File | null>(null);
   const [pending, setPending] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    async function gate() {
+      const access = await checkAdminBeatsSectionAccess();
+      if (!access.success || !access.data.allowed) {
+        router.replace("/");
+        return;
+      }
+      setAccessOk(true);
+    }
+    gate();
+  }, [router]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -80,22 +94,30 @@ export default function BeatUploadPage() {
     toast({
       title: "Beat créé !",
       description: publishNow
-        ? "Ton beat est en ligne sur la marketplace."
-        : "Ton beat a été uploadé et enregistré en brouillon.",
+        ? "Le beat est en ligne sur la marketplace."
+        : "Le beat est enregistré en brouillon.",
       variant: "success",
     });
 
-    router.push("/engineer/beats");
+    router.push("/admin/beats");
+  }
+
+  if (!accessOk) {
+    return (
+      <div className="mx-auto max-w-[600px] px-4 py-12 md:px-6 md:py-20">
+        <div className="h-64 animate-pulse rounded-xl bg-bg-surface" />
+      </div>
+    );
   }
 
   return (
     <div className="mx-auto max-w-[600px] px-4 py-12 md:px-6 md:py-20">
       <Link
-        href="/engineer/beats"
+        href="/admin/beats"
         className="mb-6 inline-flex items-center gap-1.5 text-sm text-text-muted transition-colors hover:text-text-primary"
       >
         <ArrowLeft className="h-4 w-4" />
-        Mes beats
+        Catalogue beats
       </Link>
 
       <h1 className="font-display text-2xl font-bold md:text-3xl">
@@ -103,7 +125,6 @@ export default function BeatUploadPage() {
       </h1>
 
       <form onSubmit={handleSubmit} className="mt-8 space-y-5">
-        {/* Title */}
         <div>
           <label htmlFor="title" className="mb-1.5 block text-sm font-medium">
             Titre du beat *
@@ -121,7 +142,6 @@ export default function BeatUploadPage() {
           )}
         </div>
 
-        {/* Audio file */}
         <BeatFileUploader
           label="Fichier audio (WAV, MP3, AIFF, FLAC) *"
           accept=".wav,.mp3,.aiff,.flac"
@@ -131,7 +151,6 @@ export default function BeatUploadPage() {
         />
         {errors.audio && <p className="-mt-3 text-sm text-error">{errors.audio}</p>}
 
-        {/* Cover image */}
         <BeatFileUploader
           label="Image de couverture *"
           accept=".jpg,.jpeg,.png,.webp"
@@ -141,7 +160,6 @@ export default function BeatUploadPage() {
         />
         {errors.cover && <p className="-mt-3 text-sm text-error">{errors.cover}</p>}
 
-        {/* BPM + Key */}
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label htmlFor="bpm" className="mb-1.5 block text-sm font-medium">
@@ -176,7 +194,6 @@ export default function BeatUploadPage() {
           </div>
         </div>
 
-        {/* Genre */}
         <div>
           <label htmlFor="genre" className="mb-1.5 block text-sm font-medium">
             Genre *
@@ -195,7 +212,6 @@ export default function BeatUploadPage() {
           </select>
         </div>
 
-        {/* Tags */}
         <div>
           <label htmlFor="tags" className="mb-1.5 block text-sm font-medium">
             Tags
@@ -210,7 +226,6 @@ export default function BeatUploadPage() {
           />
         </div>
 
-        {/* Pricing */}
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label
@@ -265,10 +280,9 @@ export default function BeatUploadPage() {
 
         {errors.form && <p className="text-sm text-error">{errors.form}</p>}
 
-        {/* Submit */}
         <div className="flex gap-3">
           <Link
-            href="/engineer/beats"
+            href="/admin/beats"
             className="flex-1 rounded-lg border border-border-default px-6 py-3 text-center text-sm font-medium text-text-primary transition-colors hover:bg-bg-hover"
           >
             Annuler
@@ -278,7 +292,7 @@ export default function BeatUploadPage() {
             disabled={pending}
             className="flex-1 rounded-lg bg-brand-gradient px-6 py-3 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
           >
-            {pending ? "Création..." : publishNow ? "Publier" : "Enregistrer en brouillon"}
+            {pending ? "Envoi..." : "Enregistrer le beat"}
           </button>
         </div>
       </form>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import { AudioPlayer } from "@/components/beats/audio-player";
 import type { Beat } from "@/types";
 
 interface BeatSwipeCardProps {
@@ -150,17 +151,10 @@ export function BeatSwipeCard({
               {beat.genre && <span className="pill">{beat.genre}</span>}
             </div>
           </div>
-        </div>
 
-        {/* Progress bar */}
-        <div
-          className="absolute bottom-0 left-0 right-0"
-          style={{ height: 3, background: "rgba(255,255,255,0.1)" }}
-        >
-          <div
-            className="h-full rounded-sm"
-            style={{ width: "65%", background: "var(--color-brand-gradient)" }}
-          />
+          <div className="relative z-[2] mt-4 w-full px-1 text-left [&_span]:text-white/80">
+            <AudioPlayer beatId={beat.id} previewUrl={beat.audio_preview_url} />
+          </div>
         </div>
       </div>
     </div>

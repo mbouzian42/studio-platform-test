@@ -1,6 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { createServiceRoleClient } from "@/lib/supabase/service-role";
 import type { ActionResponse } from "@/types";
 import type { Beat, BeatPurchase, LicenseType } from "@/types";
 import { createCheckoutSession } from "@/lib/stripe";
@@ -205,16 +206,99 @@ export async function getBeatDownloadUrl(
     return { success: false, error: "Fichier audio introuvable" };
   }
 
-  // Generate signed URL (15 minutes)
-  const { data: signedUrl, error } = await supabase.storage
-    .from("beat-files")
-    .createSignedUrl(beat.audio_full_url, 900);
+  let signedUrl: { signedUrl: string } | null = null;
+  try {
+    const service = createServiceRoleClient();
+    const out = await service.storage
+      .from("beat-files")
+      .createSignedUrl(beat.audio_full_url, 900);
+    if (!out.error && out.data) signedUrl = out.data;
+  } catch {
+    return {
+      success: false,
+      error:
+        "Configuration serveur incomplète (clé service Supabase requise pour le téléchargement)",
+    };
+  }
 
-  if (error || !signedUrl) {
+  if (!signedUrl) {
     return { success: false, error: "Impossible de générer le lien de téléchargement" };
   }
 
   return { success: true, data: { url: signedUrl.signedUrl } };
+}
+
+// ── Favorites (marketplace swipe / cart) ──
+
+export async function addBeatToFavorites(beatId: string): Promise<ActionResponse> {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    return { success: false, error: "Connexion requise pour enregistrer en favoris" };
+  }
+
+  const { error } = await supabase.from("beat_favorites").insert({
+    user_id: user.id,
+    beat_id: beatId,
+  });
+
+  if (error) {
+    if (error.code === "23505") {
+      return { success: true, data: undefined };
+    }
+    return { success: false, error: error.message };
+  }
+  return { success: true, data: undefined };
+}
+
+export async function removeBeatFromFavorites(beatId: string): Promise<ActionResponse> {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    return { success: false, error: "Non connecté" };
+  }
+
+  const { error } = await supabase
+    .from("beat_favorites")
+    .delete()
+    .eq("user_id", user.id)
+    .eq("beat_id", beatId);
+
+  if (error) return { success: false, error: error.message };
+  return { success: true, data: undefined };
+}
+
+export async function getMyFavoriteBeats(): Promise<ActionResponse<Beat[]>> {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    return { success: false, error: "Non connecté" };
+  }
+
+  const { data: rows, error } = await supabase
+    .from("beat_favorites")
+    .select("created_at, beats(*)")
+    .eq("user_id", user.id)
+    .order("created_at", { ascending: false });
+
+  if (error) return { success: false, error: error.message };
+
+  type FavoriteRow = { beats: Beat | null };
+  const list: Beat[] = [];
+  for (const row of (rows ?? []) as FavoriteRow[]) {
+    if (row.beats) list.push(row.beats);
+  }
+
+  return { success: true, data: list };
 }
 
 // ── Beatmaker management ──
@@ -290,13 +374,28 @@ export async function createBeat(input: {
   return { success: true, data };
 }
 
-const AUDIO_EXTENSIONS = [".wav", ".aiff", ".flac"];
+const AUDIO_EXTENSIONS = [".wav", ".mp3", ".aiff", ".flac"];
 const IMAGE_EXTENSIONS = [".jpg", ".jpeg", ".png", ".webp"];
 const MAX_AUDIO_SIZE = 200 * 1024 * 1024; // 200MB
 const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10MB
 
-const VALID_AUDIO_MIMES = ["audio/wav", "audio/x-wav", "audio/aiff", "audio/x-aiff", "audio/flac"];
+const VALID_AUDIO_MIMES = [
+  "audio/wav",
+  "audio/x-wav",
+  "audio/mpeg",
+  "audio/mp3",
+  "audio/aiff",
+  "audio/x-aiff",
+  "audio/flac",
+];
+
 const VALID_IMAGE_MIMES = ["image/jpeg", "image/png", "image/webp"];
+
+function isAllowedAudioMime(mime: string, ext: string): boolean {
+  if (VALID_AUDIO_MIMES.includes(mime)) return true;
+  if (ext === ".mp3" && (!mime || mime === "application/octet-stream")) return true;
+  return false;
+}
 
 function getExtension(filename: string): string {
   const parts = filename.split(".");
@@ -339,8 +438,8 @@ export async function createBeatWithFiles(
   if (!audioExt || !AUDIO_EXTENSIONS.includes(audioExt)) {
     return { success: false, error: `Format audio non supporté : ${audioExt || "inconnu"}` };
   }
-  if (!VALID_AUDIO_MIMES.includes(audioFile.type)) {
-    return { success: false, error: `Type MIME audio non supporté : ${audioFile.type}` };
+  if (!isAllowedAudioMime(audioFile.type, audioExt)) {
+    return { success: false, error: `Type MIME audio non supporté : ${audioFile.type || "inconnu"}` };
   }
   if (audioFile.size > MAX_AUDIO_SIZE) {
     return { success: false, error: "Fichier audio trop volumineux (max 200 Mo)" };
@@ -366,6 +465,7 @@ export async function createBeatWithFiles(
     tags: string[];
     priceSimple: number;
     priceExclusive: number | null;
+    isPublished?: boolean;
   };
   try {
     metadata = JSON.parse(metadataRaw);
@@ -377,6 +477,7 @@ export async function createBeatWithFiles(
   if (metadata.priceSimple < 1) return { success: false, error: "Le prix simple doit être positif" };
 
   const slug = slugify(metadata.title) + "-" + Date.now().toString(36);
+  const publish = metadata.isPublished === true;
 
   // Step 1: Insert beat record
   const { data: beat, error: insertError } = await supabase
@@ -391,7 +492,7 @@ export async function createBeatWithFiles(
       tags: metadata.tags,
       price_simple: metadata.priceSimple,
       price_exclusive: metadata.priceExclusive,
-      is_published: false,
+      is_published: publish,
       is_exclusive_sold: false,
     })
     .select()
@@ -403,33 +504,47 @@ export async function createBeatWithFiles(
 
   const basePath = `${user.id}/${beat.id}`;
 
+  // Storage uploads use the service role so they are not blocked by storage RLS
+  // quirks (e.g. private bucket + server actions). Paths are always
+  // `${authenticated_user_id}/...` — identity was verified above.
+  let storageAdmin: ReturnType<typeof createServiceRoleClient>;
+  try {
+    storageAdmin = createServiceRoleClient();
+  } catch {
+    return {
+      success: false,
+      error:
+        "Configuration serveur : SUPABASE_SERVICE_ROLE_KEY manquante pour l’upload storage",
+    };
+  }
+
   try {
     // Step 2: Upload cover image to beat-previews
     const coverPath = `${basePath}/cover${coverExt}`;
-    const { error: coverErr } = await supabase.storage
+    const { error: coverErr } = await storageAdmin.storage
       .from("beat-previews")
       .upload(coverPath, coverFile, { upsert: true });
     if (coverErr) throw new Error(`Cover upload: ${coverErr.message}`);
 
     // Step 3: Upload full audio to beat-files (private)
     const audioPath = `${basePath}/audio${audioExt}`;
-    const { error: audioErr } = await supabase.storage
+    const { error: audioErr } = await storageAdmin.storage
       .from("beat-files")
       .upload(audioPath, audioFile, { upsert: true });
     if (audioErr) throw new Error(`Audio upload: ${audioErr.message}`);
 
     // Step 4: Upload same audio to beat-previews (public preview)
     const previewPath = `${basePath}/preview${audioExt}`;
-    const { error: previewErr } = await supabase.storage
+    const { error: previewErr } = await storageAdmin.storage
       .from("beat-previews")
       .upload(previewPath, audioFile, { upsert: true });
     if (previewErr) throw new Error(`Preview upload: ${previewErr.message}`);
 
     // Step 5: Get public URLs
-    const { data: coverUrl } = supabase.storage
+    const { data: coverUrl } = storageAdmin.storage
       .from("beat-previews")
       .getPublicUrl(coverPath);
-    const { data: previewUrl } = supabase.storage
+    const { data: previewUrl } = storageAdmin.storage
       .from("beat-previews")
       .getPublicUrl(previewPath);
 
@@ -454,11 +569,11 @@ export async function createBeatWithFiles(
     // Cleanup on failure: delete beat record and any uploaded files
     try {
       await supabase.from("beats").delete().eq("id", beat.id);
-      await supabase.storage.from("beat-previews").remove([
+      await storageAdmin.storage.from("beat-previews").remove([
         `${basePath}/cover${coverExt}`,
         `${basePath}/preview${audioExt}`,
       ]);
-      await supabase.storage.from("beat-files").remove([`${basePath}/audio${audioExt}`]);
+      await storageAdmin.storage.from("beat-files").remove([`${basePath}/audio${audioExt}`]);
     } catch (cleanupErr) {
       console.error("[createBeatWithFiles] Cleanup failed for beat", beat.id, cleanupErr);
     }

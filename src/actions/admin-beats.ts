@@ -3,12 +3,12 @@
 import { createClient } from "@/lib/supabase/server";
 import type { ActionResponse, Beat } from "@/types";
 
-async function verifyAdmin() {
+async function verifyAdminBeatsSection() {
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return { supabase, isAdmin: false };
+  if (!user) return { supabase, allowed: false };
 
   const { data: profile } = await supabase
     .from("profiles")
@@ -16,7 +16,9 @@ async function verifyAdmin() {
     .eq("id", user.id)
     .single<{ role: string }>();
 
-  return { supabase, isAdmin: profile?.role === "admin" };
+  const allowed =
+    profile?.role === "admin" || profile?.role === "engineer";
+  return { supabase, allowed };
 }
 
 export interface AdminBeat extends Beat {
@@ -24,8 +26,8 @@ export interface AdminBeat extends Beat {
 }
 
 export async function getAdminBeats(): Promise<ActionResponse<AdminBeat[]>> {
-  const { supabase, isAdmin } = await verifyAdmin();
-  if (!isAdmin) return { success: false, error: "Accès refusé" };
+  const { supabase, allowed } = await verifyAdminBeatsSection();
+  if (!allowed) return { success: false, error: "Accès refusé" };
 
   const { data: beats, error } = await supabase
     .from("beats")
@@ -70,8 +72,8 @@ export async function adminUpdateBeat(
     is_published?: boolean;
   },
 ): Promise<ActionResponse> {
-  const { supabase, isAdmin } = await verifyAdmin();
-  if (!isAdmin) return { success: false, error: "Accès refusé" };
+  const { supabase, allowed } = await verifyAdminBeatsSection();
+  if (!allowed) return { success: false, error: "Accès refusé" };
 
   const { error } = await supabase
     .from("beats")
@@ -83,8 +85,8 @@ export async function adminUpdateBeat(
 }
 
 export async function adminDeleteBeat(beatId: string): Promise<ActionResponse> {
-  const { supabase, isAdmin } = await verifyAdmin();
-  if (!isAdmin) return { success: false, error: "Accès refusé" };
+  const { supabase, allowed } = await verifyAdminBeatsSection();
+  if (!allowed) return { success: false, error: "Accès refusé" };
 
   // Unpublish instead of hard delete (preserves purchase history)
   const { error } = await supabase

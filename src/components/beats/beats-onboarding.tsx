@@ -156,8 +156,8 @@ export function BeatsOnboarding({ onComplete }: BeatsOnboardingProps) {
           marginBottom: 40,
         }}
       >
-        Écoute les prods, swipe à droite pour voir les détails et acheter. À
-        gauche pour passer.
+        Écoute les prods, swipe à droite pour ajouter aux favoris. À gauche
+        pour passer au suivant.
       </p>
 
       {/* CTA */}
