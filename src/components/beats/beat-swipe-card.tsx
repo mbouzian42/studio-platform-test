@@ -102,14 +102,18 @@ export function BeatSwipeCard({
               : "none",
         }}
       >
-        {/* Dark gradient background */}
+        {/* Cover image or gradient background */}
         <div
-          className="absolute inset-0"
+          className="absolute inset-0 bg-cover bg-center"
           style={{
-            background:
-              "linear-gradient(135deg, #1a0a2e 0%, #4a1a8a 30%, rgba(217,70,239,0.13) 70%, #1a0a2e 100%)",
+            backgroundImage: beat.cover_image_url
+              ? `url(${beat.cover_image_url})`
+              : "linear-gradient(135deg, #1a0a2e 0%, #4a1a8a 30%, rgba(217,70,239,0.13) 70%, #1a0a2e 100%)",
           }}
         />
+
+        {/* Overlay to ensure text readability */}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-black/10" />
 
         {/* Content */}
         <div className="relative z-[1] flex h-full flex-col justify-end p-6">

@@ -7,6 +7,10 @@ const nextConfig: NextConfig = {
         protocol: "https",
         hostname: "cdn-images.dzcdn.net",
       },
+      {
+        protocol: "https",
+        hostname: "yudkrbkdogdnwnoighmu.supabase.co",
+      },
     ],
   },
   experimental: {

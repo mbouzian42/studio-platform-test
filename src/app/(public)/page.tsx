@@ -5,7 +5,7 @@ import { HomeContactForm } from "@/components/home/contact-form";
 import { TeamSection } from "@/components/home/team-section";
 import { ArtistCarousel } from "@/components/home/artist-carousel";
 
-const ARTISTS = [
+const ARTISTS: { name: string; photo: string | null }[] = [
   { name: "Artist 1", photo: null },
   { name: "Artist 2", photo: null },
   { name: "Artist 3", photo: null },

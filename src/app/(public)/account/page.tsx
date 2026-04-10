@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { User, LogOut, Trash2, Clock, SlidersHorizontal } from "lucide-react";
+import { User, LogOut, Trash2, Clock, SlidersHorizontal, Heart } from "lucide-react";
 import Link from "next/link";
 import { getProfile, updateProfile, signOut, deleteAccount } from "@/actions/profile";
 import { toast } from "@/components/ui/toaster";
@@ -25,8 +25,16 @@ export default function AccountPage() {
     async function load() {
       const result = await getProfile();
       if (!result.success) {
-        // Not authenticated — redirect to login
-        router.push("/login?redirect=/account");
+        if (result.error === "Non connecté") {
+          router.push("/login?redirect=/account");
+        } else {
+          toast({
+            title: "Erreur de profil",
+            description: result.error,
+            variant: "error",
+          });
+          setLoading(false);
+        }
         return;
       }
       setProfile(result.data);
@@ -60,7 +68,7 @@ export default function AccountPage() {
       return;
     }
 
-    setProfile((prev) => prev ? { ...prev, ...result.data } : prev);
+    setProfile((prev: (Profile & { email: string }) | null) => prev ? { ...prev, ...result.data } : prev);
     toast({
       title: "Profil mis à jour",
       description: "Tes informations ont été enregistrées.",
@@ -131,6 +139,10 @@ export default function AccountPage() {
 
       {/* Quick Actions */}
       <div className="flex gap-3 mb-6">
+        <Link href="/account/favorites" className="flex-1 rounded-xl border border-border-subtle bg-bg-elevated p-4 text-center transition-colors hover:border-border-default">
+          <Heart className="mx-auto mb-2 h-5 w-5 text-pink-500" />
+          <span className="text-xs font-medium">Favoris</span>
+        </Link>
         <Link href="/account/history" className="flex-1 rounded-xl border border-border-subtle bg-bg-elevated p-4 text-center transition-colors hover:border-border-default">
           <Clock className="mx-auto mb-2 h-5 w-5 text-purple-500" />
           <span className="text-xs font-medium">Historique</span>

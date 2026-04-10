@@ -12,6 +12,8 @@ import {
   type AdminBeat,
 } from "@/actions/admin-beats";
 import { toast } from "@/components/ui/toaster";
+import { BeatUploadForm } from "@/components/beats/beat-upload-form";
+import { Plus } from "lucide-react";
 
 function getStatusLabel(beat: AdminBeat): { label: string; color: string } {
   if (beat.is_exclusive_sold) return { label: "Vendu (exclusif)", color: "text-error" };
@@ -26,6 +28,7 @@ export default function AdminBeatsCatalogPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editPrice, setEditPrice] = useState(0);
   const [editPriceExcl, setEditPriceExcl] = useState(0);
+  const [showUpload, setShowUpload] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -121,12 +124,37 @@ export default function AdminBeatsCatalogPage() {
         Dashboard
       </Link>
 
-      <h1 className="font-display text-[30px] font-bold leading-tight">
-        Catalogue Beats
-      </h1>
-      <p className="mt-1 text-sm text-text-secondary">
-        {beats.length} beat{beats.length > 1 ? "s" : ""} au total
-      </p>
+      <div className="flex items-end justify-between">
+        <div>
+          <h1 className="font-display text-[30px] font-bold leading-tight">
+            Catalogue Beats
+          </h1>
+          <p className="mt-1 text-sm text-text-secondary">
+            {beats.length} beat{beats.length > 1 ? "s" : ""} au total
+          </p>
+        </div>
+        <button
+          onClick={() => setShowUpload(true)}
+          className="inline-flex items-center gap-2 rounded-lg bg-brand-gradient px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-brand-primary/20 transition-all hover:opacity-90"
+        >
+          <Plus className="h-4 w-4" />
+          Nouveau Beat
+        </button>
+      </div>
+
+      {showUpload && (
+        <div className="mt-8">
+          <BeatUploadForm
+            onSuccess={() => {
+              setShowUpload(false);
+              getAdminBeats().then((res) => {
+                if (res.success) setBeats(res.data);
+              });
+            }}
+            onCancel={() => setShowUpload(false)}
+          />
+        </div>
+      )}
 
       <div className="mt-8 space-y-3">
         {beats.length === 0 ? (
