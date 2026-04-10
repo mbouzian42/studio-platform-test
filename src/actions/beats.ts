@@ -416,21 +416,21 @@ export async function createBeatWithFiles(
     const coverPath = `${basePath}/cover${coverExt}`;
     const { error: coverErr } = await supabase.storage
       .from("beat-previews")
-      .upload(coverPath, coverFile, { upsert: true });
+      .upload(coverPath, coverFile);
     if (coverErr) throw new Error(`Cover upload: ${coverErr.message}`);
 
     // Step 3: Upload full audio to beat-files (private)
     const audioPath = `${basePath}/audio${audioExt}`;
     const { error: audioErr } = await supabase.storage
       .from("beat-files")
-      .upload(audioPath, audioFile, { upsert: true });
+      .upload(audioPath, audioFile);
     if (audioErr) throw new Error(`Audio upload: ${audioErr.message}`);
 
     // Step 4: Upload same audio to beat-previews (public preview)
     const previewPath = `${basePath}/preview${audioExt}`;
     const { error: previewErr } = await supabase.storage
       .from("beat-previews")
-      .upload(previewPath, audioFile, { upsert: true });
+      .upload(previewPath, audioFile);
     if (previewErr) throw new Error(`Preview upload: ${previewErr.message}`);
 
     // Step 5: Get public URLs
