@@ -504,33 +504,47 @@ export async function createBeatWithFiles(
 
   const basePath = `${user.id}/${beat.id}`;
 
+  // Storage uploads use the service role so they are not blocked by storage RLS
+  // quirks (e.g. private bucket + server actions). Paths are always
+  // `${authenticated_user_id}/...` — identity was verified above.
+  let storageAdmin: ReturnType<typeof createServiceRoleClient>;
+  try {
+    storageAdmin = createServiceRoleClient();
+  } catch {
+    return {
+      success: false,
+      error:
+        "Configuration serveur : SUPABASE_SERVICE_ROLE_KEY manquante pour l’upload storage",
+    };
+  }
+
   try {
     // Step 2: Upload cover image to beat-previews
     const coverPath = `${basePath}/cover${coverExt}`;
-    const { error: coverErr } = await supabase.storage
+    const { error: coverErr } = await storageAdmin.storage
       .from("beat-previews")
       .upload(coverPath, coverFile, { upsert: true });
     if (coverErr) throw new Error(`Cover upload: ${coverErr.message}`);
 
     // Step 3: Upload full audio to beat-files (private)
     const audioPath = `${basePath}/audio${audioExt}`;
-    const { error: audioErr } = await supabase.storage
+    const { error: audioErr } = await storageAdmin.storage
       .from("beat-files")
       .upload(audioPath, audioFile, { upsert: true });
     if (audioErr) throw new Error(`Audio upload: ${audioErr.message}`);
 
     // Step 4: Upload same audio to beat-previews (public preview)
     const previewPath = `${basePath}/preview${audioExt}`;
-    const { error: previewErr } = await supabase.storage
+    const { error: previewErr } = await storageAdmin.storage
       .from("beat-previews")
       .upload(previewPath, audioFile, { upsert: true });
     if (previewErr) throw new Error(`Preview upload: ${previewErr.message}`);
 
     // Step 5: Get public URLs
-    const { data: coverUrl } = supabase.storage
+    const { data: coverUrl } = storageAdmin.storage
       .from("beat-previews")
       .getPublicUrl(coverPath);
-    const { data: previewUrl } = supabase.storage
+    const { data: previewUrl } = storageAdmin.storage
       .from("beat-previews")
       .getPublicUrl(previewPath);
 
@@ -555,11 +569,11 @@ export async function createBeatWithFiles(
     // Cleanup on failure: delete beat record and any uploaded files
     try {
       await supabase.from("beats").delete().eq("id", beat.id);
-      await supabase.storage.from("beat-previews").remove([
+      await storageAdmin.storage.from("beat-previews").remove([
         `${basePath}/cover${coverExt}`,
         `${basePath}/preview${audioExt}`,
       ]);
-      await supabase.storage.from("beat-files").remove([`${basePath}/audio${audioExt}`]);
+      await storageAdmin.storage.from("beat-files").remove([`${basePath}/audio${audioExt}`]);
     } catch (cleanupErr) {
       console.error("[createBeatWithFiles] Cleanup failed for beat", beat.id, cleanupErr);
     }
