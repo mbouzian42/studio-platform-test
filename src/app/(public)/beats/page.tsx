@@ -6,7 +6,8 @@ import { Music } from "lucide-react";
 import { getPublishedBeats } from "@/actions/beats";
 import { BeatSwipeCard } from "@/components/beats/beat-swipe-card";
 import { BeatsOnboarding } from "@/components/beats/beats-onboarding";
-import { MOCK_BEATS } from "@/lib/mock-beats";
+import { AudioPlayer } from "@/components/beats/audio-player";
+import { useAudioStore } from "@/stores/audio-store";
 import type { Beat } from "@/types";
 
 export default function BeatsPage() {
@@ -18,6 +19,8 @@ export default function BeatsPage() {
   const [loading, setLoading] = useState(true);
   const [showOnboarding, setShowOnboarding] = useState(false);
 
+  const { play, stop } = useAudioStore();
+
   useEffect(() => {
     // Check localStorage after mount (avoids SSR/hydration mismatch)
     if (!localStorage.getItem("studio_beats_onboarded")) {
@@ -28,35 +31,49 @@ export default function BeatsPage() {
       const result = await getPublishedBeats();
       if (result.success && result.data.length > 0) {
         setBeats(result.data);
-      } else {
-        setBeats(MOCK_BEATS);
       }
       setLoading(false);
     }
     load();
   }, []);
 
+  // Auto-play when the active beat changes (and onboarding is dismissed)
+  useEffect(() => {
+    if (showOnboarding || beats.length === 0 || currentIndex >= beats.length) return;
+    const beat = beats[currentIndex];
+    if (beat.audio_preview_url) {
+      play(beat.id, beat.audio_preview_url);
+    }
+  }, [currentIndex, showOnboarding, beats, play]);
+
   const handleOnboardingComplete = useCallback(() => {
     localStorage.setItem("studio_beats_onboarded", "true");
     setShowOnboarding(false);
-  }, []);
+
+    // Trigger first beat auto-play right after user interaction
+    // (satisfies browser autoplay restrictions)
+    if (beats.length > 0 && beats[0].audio_preview_url) {
+      play(beats[0].id, beats[0].audio_preview_url);
+    }
+  }, [beats, play]);
 
   const animateAndAdvance = useCallback(
     (direction: "left" | "right") => {
       if (animatingRef.current) return;
       animatingRef.current = true;
+
+      // Stop current audio before animating
+      stop();
+
       setExitDirection(direction);
 
       setTimeout(() => {
-        if (direction === "right" && beats[currentIndex]) {
-          router.push(`/beats/${beats[currentIndex].slug}`);
-        }
         setCurrentIndex((i) => i + 1);
         setExitDirection(null);
         animatingRef.current = false;
       }, 400);
     },
-    [beats, currentIndex, router],
+    [stop],
   );
 
   const handleSwipeLeft = useCallback(() => {
@@ -144,7 +161,7 @@ export default function BeatsPage() {
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <polyline points="15 18 9 12 15 6" />
           </svg>
-          Swipe pour découvrir
+          <span>Swipe pour découvrir</span>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <polyline points="9 18 15 12 9 6" />
           </svg>
@@ -162,6 +179,15 @@ export default function BeatsPage() {
               onSwipeRight={handleSwipeRight}
             />
           </div>
+        </div>
+
+        {/* Audio player — below card, above action buttons */}
+        <div style={{ padding: "0 24px", maxWidth: 340, width: "100%", margin: "0 auto" }}>
+          <AudioPlayer
+            key={beats[currentIndex].id}
+            beatId={beats[currentIndex].id}
+            previewUrl={beats[currentIndex].audio_preview_url}
+          />
         </div>
 
         {/* Action buttons — prototype style */}
@@ -184,7 +210,7 @@ export default function BeatsPage() {
             type="button"
             onClick={handleSwipeRight}
             className="swipe-btn swipe-btn-like"
-            aria-label="Voir les détails de la prod"
+            aria-label="Ajouter aux favoris"
           >
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
