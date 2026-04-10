@@ -3,6 +3,7 @@
 import { createClient } from "@/lib/supabase/server";
 import type { ActionResponse } from "@/types";
 import type { Beat, BeatPurchase, BeatFavorite, LicenseType } from "@/types";
+import { createClient as createServiceRoleClient } from "@supabase/supabase-js";
 import { createCheckoutSession } from "@/lib/stripe";
 
 export async function getPublishedBeats(): Promise<ActionResponse<Beat[]>> {
@@ -290,12 +291,12 @@ export async function createBeat(input: {
   return { success: true, data };
 }
 
-const AUDIO_EXTENSIONS = [".wav", ".mp3", ".aiff", ".flac"];
+const AUDIO_EXTENSIONS = [".wav", ".mp3", ".m4a", ".aiff", ".flac"];
 const IMAGE_EXTENSIONS = [".jpg", ".jpeg", ".png", ".webp"];
 const MAX_AUDIO_SIZE = 200 * 1024 * 1024; // 200MB
 const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10MB
 
-const VALID_AUDIO_MIMES = ["audio/wav", "audio/x-wav", "audio/mpeg", "audio/aiff", "audio/x-aiff", "audio/flac"];
+const VALID_AUDIO_MIMES = ["audio/wav", "audio/x-wav", "audio/mpeg", "audio/mp4", "audio/x-m4a", "audio/aiff", "audio/x-aiff", "audio/flac"];
 const VALID_IMAGE_MIMES = ["image/jpeg", "image/png", "image/webp"];
 
 function getExtension(filename: string): string {
@@ -403,33 +404,40 @@ export async function createBeatWithFiles(
 
   const basePath = `${user.id}/${beat.id}`;
 
+  // Use service role client for storage uploads (bypasses RLS)
+  // Safe because we already verified admin/beatmaker role above
+  const storageClient = createServiceRoleClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  );
+
   try {
     // Step 2: Upload cover image to beat-previews
     const coverPath = `${basePath}/cover${coverExt}`;
-    const { error: coverErr } = await supabase.storage
+    const { error: coverErr } = await storageClient.storage
       .from("beat-previews")
       .upload(coverPath, coverFile, { upsert: true });
     if (coverErr) throw new Error(`Cover upload: ${coverErr.message}`);
 
     // Step 3: Upload full audio to beat-files (private)
     const audioPath = `${basePath}/audio${audioExt}`;
-    const { error: audioErr } = await supabase.storage
+    const { error: audioErr } = await storageClient.storage
       .from("beat-files")
       .upload(audioPath, audioFile, { upsert: true });
     if (audioErr) throw new Error(`Audio upload: ${audioErr.message}`);
 
     // Step 4: Upload same audio to beat-previews (public preview)
     const previewPath = `${basePath}/preview${audioExt}`;
-    const { error: previewErr } = await supabase.storage
+    const { error: previewErr } = await storageClient.storage
       .from("beat-previews")
       .upload(previewPath, audioFile, { upsert: true });
     if (previewErr) throw new Error(`Preview upload: ${previewErr.message}`);
 
     // Step 5: Get public URLs
-    const { data: coverUrl } = supabase.storage
+    const { data: coverUrl } = storageClient.storage
       .from("beat-previews")
       .getPublicUrl(coverPath);
-    const { data: previewUrl } = supabase.storage
+    const { data: previewUrl } = storageClient.storage
       .from("beat-previews")
       .getPublicUrl(previewPath);
 

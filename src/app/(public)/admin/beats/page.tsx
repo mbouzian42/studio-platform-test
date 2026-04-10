@@ -279,7 +279,7 @@ export default function AdminBeatsCatalogPage() {
             <div className="grid gap-4 md:grid-cols-2">
               <BeatFileUploader
                 label="Fichier audio"
-                accept=".wav,.mp3,.aiff,.flac"
+                accept=".wav,.mp3,.m4a,.aiff,.flac"
                 maxSizeMb={200}
                 file={audioFile}
                 onFileChange={setAudioFile}

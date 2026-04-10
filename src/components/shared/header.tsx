@@ -14,7 +14,7 @@ export function Header() {
       <div className="mx-auto flex h-16 max-w-[1200px] items-center justify-between px-6">
         {/* Logo */}
         <Link href="/" className="flex items-center">
-          <Image src="/img/logo.png" alt="Studio Platform" width={160} height={32} className="h-8 w-auto object-contain" />
+          <Image src="/img/logo.jpg" alt="Studio Platform" width={160} height={32} className="h-8 w-auto object-contain" />
         </Link>
 
         {/* Navigation */}

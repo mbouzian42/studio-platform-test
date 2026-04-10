@@ -32,7 +32,7 @@ export default function AuthLayout({
 
       <main className="flex flex-1 flex-col items-center px-4 pt-8 pb-12">
         {/* Brand mark */}
-        <Image src="/img/logo.png" alt="Studio Platform" width={160} height={32} className="mb-4 h-8 w-auto" />
+        <Image src="/img/logo.jpg" alt="Studio Platform" width={160} height={32} className="mb-4 h-8 w-auto" />
         {children}
       </main>
     </div>

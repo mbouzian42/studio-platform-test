@@ -36,7 +36,7 @@ export default function HomePage() {
           {/* Header with Logo — mobile only */}
           <div className="flex items-center justify-between pt-[52px] mb-12 md:hidden">
             <Link href="/" className="flex items-center">
-              <Image src="/img/logo.png" alt="Studio Platform" width={160} height={32} className="h-8 w-auto object-contain" />
+              <Image src="/img/logo.jpg" alt="Studio Platform" width={160} height={32} className="h-8 w-auto object-contain" />
             </Link>
           </div>
 

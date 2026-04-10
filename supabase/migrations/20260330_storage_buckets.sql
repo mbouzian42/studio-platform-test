@@ -13,14 +13,14 @@ VALUES
     'beat-previews',
     true,
     209715200, -- 200MB (stores audio previews + cover images)
-    ARRAY['audio/wav', 'audio/x-wav', 'audio/aiff', 'audio/x-aiff', 'audio/flac', 'image/jpeg', 'image/png', 'image/webp']
+    ARRAY['audio/wav', 'audio/x-wav', 'audio/mpeg', 'audio/mp4', 'audio/x-m4a', 'audio/aiff', 'audio/x-aiff', 'audio/flac', 'image/jpeg', 'image/png', 'image/webp']
   ),
   (
     'beat-files',
     'beat-files',
     false,
     209715200, -- 200MB
-    ARRAY['audio/wav', 'audio/x-wav', 'audio/aiff', 'audio/x-aiff', 'audio/flac']
+    ARRAY['audio/wav', 'audio/x-wav', 'audio/mpeg', 'audio/mp4', 'audio/x-m4a', 'audio/aiff', 'audio/x-aiff', 'audio/flac']
   )
 ON CONFLICT (id) DO NOTHING;
 
