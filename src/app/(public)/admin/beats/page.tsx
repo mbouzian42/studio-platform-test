@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Eye, EyeOff, Trash2, Music } from "lucide-react";
+import { ArrowLeft, Eye, EyeOff, Trash2, Music, Plus } from "lucide-react";
 import { checkAdminAccess } from "@/actions/admin";
 import {
   getAdminBeats,
@@ -42,22 +42,27 @@ export default function AdminBeatsCatalogPage() {
   }, [router]);
 
   async function handleTogglePublish(beat: AdminBeat) {
-    const result = await adminUpdateBeat(beat.id, {
-      is_published: !beat.is_published,
-    });
-    if (!result.success) {
-      toast({ title: "Erreur", description: result.error, variant: "error" });
-      return;
+    try {
+      const result = await adminUpdateBeat(beat.id, {
+        is_published: !beat.is_published,
+      });
+      if (!result.success) {
+        toast({ title: "Erreur", description: result.error, variant: "error" });
+        return;
+      }
+      setBeats((prev) =>
+        prev.map((b) =>
+          b.id === beat.id ? { ...b, is_published: !b.is_published } : b,
+        ),
+      );
+      toast({
+        title: beat.is_published ? "Beat dépublié" : "Beat publié",
+        variant: "success",
+      });
+    } catch (err) {
+      console.error("[handleTogglePublish] Error:", err);
+      toast({ title: "Erreur", description: "Une erreur est survenue", variant: "error" });
     }
-    setBeats((prev) =>
-      prev.map((b) =>
-        b.id === beat.id ? { ...b, is_published: !b.is_published } : b,
-      ),
-    );
-    toast({
-      title: beat.is_published ? "Beat dépublié" : "Beat publié",
-      variant: "success",
-    });
   }
 
   async function handleDelete(beatId: string) {
@@ -121,12 +126,23 @@ export default function AdminBeatsCatalogPage() {
         Dashboard
       </Link>
 
-      <h1 className="font-display text-[30px] font-bold leading-tight">
-        Catalogue Beats
-      </h1>
-      <p className="mt-1 text-sm text-text-secondary">
-        {beats.length} beat{beats.length > 1 ? "s" : ""} au total
-      </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="font-display text-[30px] font-bold leading-tight">
+            Catalogue Beats
+          </h1>
+          <p className="mt-1 text-sm text-text-secondary">
+            {beats.length} beat{beats.length > 1 ? "s" : ""} au total
+          </p>
+        </div>
+        <Link
+          href="/admin/beats/upload"
+          className="flex items-center gap-2 rounded-lg bg-brand-gradient px-4 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+        >
+          <Plus className="h-4 w-4" />
+          Upload
+        </Link>
+      </div>
 
       <div className="mt-8 space-y-3">
         {beats.length === 0 ? (
@@ -225,22 +241,17 @@ export default function AdminBeatsCatalogPage() {
                       onClick={() => handleTogglePublish(beat)}
                       className="flex items-center gap-1 rounded-lg border border-border-default px-3 py-1.5 text-xs font-medium text-text-primary transition-colors hover:bg-bg-hover"
                     >
-                      {beat.is_published ? (
-                        <>
-                          <EyeOff className="h-3 w-3" /> Dépublier
-                        </>
-                      ) : (
-                        <>
-                          <Eye className="h-3 w-3" /> Publier
-                        </>
-                      )}
+                      <Eye className="h-3 w-3" style={{ display: beat.is_published ? "none" : "block" }} />
+                      <EyeOff className="h-3 w-3" style={{ display: beat.is_published ? "block" : "none" }} />
+                      <span>{beat.is_published ? "Dépublier" : "Publier"}</span>
                     </button>
                     <button
                       type="button"
                       onClick={() => handleDelete(beat.id)}
                       className="flex items-center gap-1 rounded-lg border border-error/30 px-3 py-1.5 text-xs font-medium text-error transition-colors hover:bg-error/10"
                     >
-                      <Trash2 className="h-3 w-3" /> Retirer
+                      <Trash2 className="h-3 w-3" />
+                      <span>Retirer</span>
                     </button>
                   </div>
                 )}
