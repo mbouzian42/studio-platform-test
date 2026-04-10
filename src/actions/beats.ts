@@ -1,6 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { createServiceRoleClient } from "@/lib/supabase/admin";
 import type { ActionResponse } from "@/types";
 import type { Beat, BeatPurchase, LicenseType } from "@/types";
 import { createCheckoutSession } from "@/lib/stripe";
@@ -290,12 +291,20 @@ export async function createBeat(input: {
   return { success: true, data };
 }
 
-const AUDIO_EXTENSIONS = [".wav", ".aiff", ".flac"];
+const AUDIO_EXTENSIONS = [".wav", ".aiff", ".flac", ".mp3"];
 const IMAGE_EXTENSIONS = [".jpg", ".jpeg", ".png", ".webp"];
 const MAX_AUDIO_SIZE = 200 * 1024 * 1024; // 200MB
 const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10MB
 
-const VALID_AUDIO_MIMES = ["audio/wav", "audio/x-wav", "audio/aiff", "audio/x-aiff", "audio/flac"];
+const VALID_AUDIO_MIMES = [
+  "audio/wav",
+  "audio/x-wav",
+  "audio/aiff",
+  "audio/x-aiff",
+  "audio/flac",
+  "audio/mpeg",
+  "audio/mp3",
+];
 const VALID_IMAGE_MIMES = ["image/jpeg", "image/png", "image/webp"];
 
 function getExtension(filename: string): string {
@@ -339,8 +348,9 @@ export async function createBeatWithFiles(
   if (!audioExt || !AUDIO_EXTENSIONS.includes(audioExt)) {
     return { success: false, error: `Format audio non supporté : ${audioExt || "inconnu"}` };
   }
-  if (!VALID_AUDIO_MIMES.includes(audioFile.type)) {
-    return { success: false, error: `Type MIME audio non supporté : ${audioFile.type}` };
+  const audioMime = audioFile.type || "";
+  if (audioMime && !VALID_AUDIO_MIMES.includes(audioMime)) {
+    return { success: false, error: `Type MIME audio non supporté : ${audioMime}` };
   }
   if (audioFile.size > MAX_AUDIO_SIZE) {
     return { success: false, error: "Fichier audio trop volumineux (max 200 Mo)" };
@@ -366,6 +376,7 @@ export async function createBeatWithFiles(
     tags: string[];
     priceSimple: number;
     priceExclusive: number | null;
+    publishNow?: boolean;
   };
   try {
     metadata = JSON.parse(metadataRaw);
@@ -377,6 +388,7 @@ export async function createBeatWithFiles(
   if (metadata.priceSimple < 1) return { success: false, error: "Le prix simple doit être positif" };
 
   const slug = slugify(metadata.title) + "-" + Date.now().toString(36);
+  const publishInitial = Boolean(metadata.publishNow);
 
   // Step 1: Insert beat record
   const { data: beat, error: insertError } = await supabase
@@ -391,7 +403,7 @@ export async function createBeatWithFiles(
       tags: metadata.tags,
       price_simple: metadata.priceSimple,
       price_exclusive: metadata.priceExclusive,
-      is_published: false,
+      is_published: publishInitial,
       is_exclusive_sold: false,
     })
     .select()
@@ -403,33 +415,46 @@ export async function createBeatWithFiles(
 
   const basePath = `${user.id}/${beat.id}`;
 
+  // Storage uploads use service role so RLS on storage.objects does not depend on
+  // cookie/session propagation in server actions (avoids RLS violations).
+  let storageAdmin: ReturnType<typeof createServiceRoleClient>;
+  try {
+    storageAdmin = createServiceRoleClient();
+  } catch {
+    return {
+      success: false,
+      error:
+        "Configuration serveur: SUPABASE_SERVICE_ROLE_KEY manquante pour l'upload Storage.",
+    };
+  }
+
   try {
     // Step 2: Upload cover image to beat-previews
     const coverPath = `${basePath}/cover${coverExt}`;
-    const { error: coverErr } = await supabase.storage
+    const { error: coverErr } = await storageAdmin.storage
       .from("beat-previews")
       .upload(coverPath, coverFile, { upsert: true });
     if (coverErr) throw new Error(`Cover upload: ${coverErr.message}`);
 
     // Step 3: Upload full audio to beat-files (private)
     const audioPath = `${basePath}/audio${audioExt}`;
-    const { error: audioErr } = await supabase.storage
+    const { error: audioErr } = await storageAdmin.storage
       .from("beat-files")
       .upload(audioPath, audioFile, { upsert: true });
     if (audioErr) throw new Error(`Audio upload: ${audioErr.message}`);
 
     // Step 4: Upload same audio to beat-previews (public preview)
     const previewPath = `${basePath}/preview${audioExt}`;
-    const { error: previewErr } = await supabase.storage
+    const { error: previewErr } = await storageAdmin.storage
       .from("beat-previews")
       .upload(previewPath, audioFile, { upsert: true });
     if (previewErr) throw new Error(`Preview upload: ${previewErr.message}`);
 
     // Step 5: Get public URLs
-    const { data: coverUrl } = supabase.storage
+    const { data: coverUrl } = storageAdmin.storage
       .from("beat-previews")
       .getPublicUrl(coverPath);
-    const { data: previewUrl } = supabase.storage
+    const { data: previewUrl } = storageAdmin.storage
       .from("beat-previews")
       .getPublicUrl(previewPath);
 
@@ -454,11 +479,11 @@ export async function createBeatWithFiles(
     // Cleanup on failure: delete beat record and any uploaded files
     try {
       await supabase.from("beats").delete().eq("id", beat.id);
-      await supabase.storage.from("beat-previews").remove([
+      await storageAdmin.storage.from("beat-previews").remove([
         `${basePath}/cover${coverExt}`,
         `${basePath}/preview${audioExt}`,
       ]);
-      await supabase.storage.from("beat-files").remove([`${basePath}/audio${audioExt}`]);
+      await storageAdmin.storage.from("beat-files").remove([`${basePath}/audio${audioExt}`]);
     } catch (cleanupErr) {
       console.error("[createBeatWithFiles] Cleanup failed for beat", beat.id, cleanupErr);
     }
@@ -527,6 +552,94 @@ export async function toggleBeatPublish(
 
   if (error) return { success: false, error: error.message };
   return { success: true, data: undefined };
+}
+
+// ── Beat favorites (marketplace swipe / account) ──
+
+export async function addBeatToFavorites(beatId: string): Promise<ActionResponse> {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { success: false, error: "Connexion requise" };
+
+  const { data: beat } = await supabase
+    .from("beats")
+    .select("id")
+    .eq("id", beatId)
+    .eq("is_published", true)
+    .eq("is_exclusive_sold", false)
+    .maybeSingle();
+
+  if (!beat) return { success: false, error: "Beat introuvable" };
+
+  const { error } = await supabase.from("beat_favorites").insert({
+    user_id: user.id,
+    beat_id: beatId,
+  });
+
+  if (error) {
+    if (error.code === "23505") {
+      return { success: true, data: undefined };
+    }
+    return { success: false, error: error.message };
+  }
+  return { success: true, data: undefined };
+}
+
+export async function removeBeatFromFavorites(beatId: string): Promise<ActionResponse> {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { success: false, error: "Non connecté" };
+
+  const { error } = await supabase
+    .from("beat_favorites")
+    .delete()
+    .eq("user_id", user.id)
+    .eq("beat_id", beatId);
+
+  if (error) return { success: false, error: error.message };
+  return { success: true, data: undefined };
+}
+
+export async function getMyFavoriteBeats(): Promise<ActionResponse<Beat[]>> {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { success: false, error: "Non connecté" };
+
+  const { data: rows, error } = await supabase
+    .from("beat_favorites")
+    .select("beat_id, created_at")
+    .eq("user_id", user.id)
+    .order("created_at", { ascending: false });
+
+  if (error) return { success: false, error: error.message };
+
+  const ids = (rows ?? []).map((r) => r.beat_id);
+  if (ids.length === 0) return { success: true, data: [] };
+
+  const { data: beats, error: beatsErr } = await supabase
+    .from("beats")
+    .select("*")
+    .in("id", ids)
+    .eq("is_published", true)
+    .returns<Beat[]>();
+
+  if (beatsErr) return { success: false, error: beatsErr.message };
+
+  const order = new Map(ids.map((id, i) => [id, i]));
+  const sorted = [...(beats ?? [])].sort(
+    (a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0),
+  );
+
+  return { success: true, data: sorted };
 }
 
 // ── Beatmaker sales tracking ──

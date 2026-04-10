@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
+import { checkAdminAccess } from "@/actions/admin";
 import { createBeatWithFiles } from "@/actions/beats";
 import { BeatFileUploader } from "@/components/beats/beat-file-uploader";
 import { toast } from "@/components/ui/toaster";
@@ -18,8 +19,9 @@ const KEYS = [
   "Cm", "C#m", "Dm", "D#m", "Em", "Fm", "F#m", "Gm", "G#m", "Am", "A#m", "Bm",
 ];
 
-export default function BeatUploadPage() {
+export default function AdminBeatUploadPage() {
   const router = useRouter();
+  const [allowed, setAllowed] = useState(false);
 
   const [title, setTitle] = useState("");
   const [bpm, setBpm] = useState(140);
@@ -28,10 +30,23 @@ export default function BeatUploadPage() {
   const [tags, setTags] = useState("");
   const [priceSimple, setPriceSimple] = useState(35);
   const [priceExclusive, setPriceExclusive] = useState(199);
+  const [publishNow, setPublishNow] = useState(false);
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [coverFile, setCoverFile] = useState<File | null>(null);
   const [pending, setPending] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    async function gate() {
+      const access = await checkAdminAccess();
+      if (!access.success || !access.data.isAdmin) {
+        router.push("/");
+        return;
+      }
+      setAllowed(true);
+    }
+    gate();
+  }, [router]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -64,6 +79,7 @@ export default function BeatUploadPage() {
           .filter(Boolean),
         priceSimple,
         priceExclusive: priceExclusive > 0 ? priceExclusive : null,
+        publishNow,
       }),
     );
 
@@ -77,29 +93,40 @@ export default function BeatUploadPage() {
 
     toast({
       title: "Beat créé !",
-      description: "Ton beat a été uploadé et enregistré en brouillon.",
+      description: publishNow
+        ? "Le beat est en ligne sur la marketplace."
+        : "Enregistré en brouillon — publie depuis le catalogue.",
       variant: "success",
     });
 
-    router.push("/engineer/beats");
+    router.push("/admin/beats");
+  }
+
+  if (!allowed) {
+    return (
+      <div className="mx-auto max-w-[600px] px-4 py-12">
+        <div className="animate-pulse space-y-4">
+          <div className="h-8 w-48 rounded-lg bg-bg-surface" />
+        </div>
+      </div>
+    );
   }
 
   return (
     <div className="mx-auto max-w-[600px] px-4 py-12 md:px-6 md:py-20">
       <Link
-        href="/engineer/beats"
+        href="/admin/beats"
         className="mb-6 inline-flex items-center gap-1.5 text-sm text-text-muted transition-colors hover:text-text-primary"
       >
         <ArrowLeft className="h-4 w-4" />
-        Mes beats
+        Catalogue beats
       </Link>
 
       <h1 className="font-display text-2xl font-bold md:text-3xl">
-        Upload un beat
+        Upload beat (admin)
       </h1>
 
       <form onSubmit={handleSubmit} className="mt-8 space-y-5">
-        {/* Title */}
         <div>
           <label htmlFor="title" className="mb-1.5 block text-sm font-medium">
             Titre du beat *
@@ -117,7 +144,6 @@ export default function BeatUploadPage() {
           )}
         </div>
 
-        {/* Audio file */}
         <BeatFileUploader
           label="Fichier audio (WAV, MP3, AIFF, FLAC) *"
           accept=".wav,.aiff,.flac,.mp3"
@@ -127,7 +153,6 @@ export default function BeatUploadPage() {
         />
         {errors.audio && <p className="-mt-3 text-sm text-error">{errors.audio}</p>}
 
-        {/* Cover image */}
         <BeatFileUploader
           label="Image de couverture *"
           accept=".jpg,.jpeg,.png,.webp"
@@ -137,7 +162,6 @@ export default function BeatUploadPage() {
         />
         {errors.cover && <p className="-mt-3 text-sm text-error">{errors.cover}</p>}
 
-        {/* BPM + Key */}
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label htmlFor="bpm" className="mb-1.5 block text-sm font-medium">
@@ -172,7 +196,6 @@ export default function BeatUploadPage() {
           </div>
         </div>
 
-        {/* Genre */}
         <div>
           <label htmlFor="genre" className="mb-1.5 block text-sm font-medium">
             Genre *
@@ -191,7 +214,6 @@ export default function BeatUploadPage() {
           </select>
         </div>
 
-        {/* Tags */}
         <div>
           <label htmlFor="tags" className="mb-1.5 block text-sm font-medium">
             Tags
@@ -201,18 +223,14 @@ export default function BeatUploadPage() {
             type="text"
             value={tags}
             onChange={(e) => setTags(e.target.value)}
-            placeholder="dark, melodic, piano (séparés par des virgules)"
+            placeholder="dark, melodic (virgules)"
             className="w-full rounded-lg border border-border-subtle bg-bg-elevated px-4 py-2.5 text-sm text-text-primary placeholder:text-text-muted transition-colors focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
           />
         </div>
 
-        {/* Pricing */}
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label
-              htmlFor="priceSimple"
-              className="mb-1.5 block text-sm font-medium"
-            >
+            <label htmlFor="priceSimple" className="mb-1.5 block text-sm font-medium">
               Prix licence simple (€) *
             </label>
             <input
@@ -225,10 +243,7 @@ export default function BeatUploadPage() {
             />
           </div>
           <div>
-            <label
-              htmlFor="priceExclusive"
-              className="mb-1.5 block text-sm font-medium"
-            >
+            <label htmlFor="priceExclusive" className="mb-1.5 block text-sm font-medium">
               Prix licence exclusive (€)
             </label>
             <input
@@ -236,23 +251,27 @@ export default function BeatUploadPage() {
               type="number"
               min={0}
               value={priceExclusive}
-              onChange={(e) =>
-                setPriceExclusive(parseInt(e.target.value) || 0)
-              }
+              onChange={(e) => setPriceExclusive(parseInt(e.target.value) || 0)}
               className="w-full rounded-lg border border-border-subtle bg-bg-elevated px-4 py-2.5 text-sm text-text-primary transition-colors focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
             />
-            <p className="mt-1 text-xs text-text-muted">
-              0 = pas de licence exclusive
-            </p>
           </div>
         </div>
 
+        <label className="flex cursor-pointer items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={publishNow}
+            onChange={(e) => setPublishNow(e.target.checked)}
+            className="rounded border-border-subtle"
+          />
+          Publier immédiatement sur la marketplace
+        </label>
+
         {errors.form && <p className="text-sm text-error">{errors.form}</p>}
 
-        {/* Submit */}
         <div className="flex gap-3">
           <Link
-            href="/engineer/beats"
+            href="/admin/beats"
             className="flex-1 rounded-lg border border-border-default px-6 py-3 text-center text-sm font-medium text-text-primary transition-colors hover:bg-bg-hover"
           >
             Annuler
@@ -262,7 +281,7 @@ export default function BeatUploadPage() {
             disabled={pending}
             className="flex-1 rounded-lg bg-brand-gradient px-6 py-3 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
           >
-            {pending ? "Création..." : "Enregistrer en brouillon"}
+            {pending ? "Envoi..." : "Enregistrer"}
           </button>
         </div>
       </form>

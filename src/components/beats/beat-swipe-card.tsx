@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import type { Beat } from "@/types";
+import { AudioPlayer } from "@/components/beats/audio-player";
 
 interface BeatSwipeCardProps {
   beat: Beat;
@@ -26,15 +27,22 @@ export function BeatSwipeCard({
   const [dragX, setDragX] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
   const [startX, setStartX] = useState(0);
+  /** Ref avoids stale dragX in pointerup (React batching). */
+  const dragXRef = useRef(0);
 
   const SWIPE_THRESHOLD = 100;
 
   const handlePointerDown = useCallback(
     (e: React.PointerEvent) => {
       if (!isTop || exitDirection) return;
+      if ((e.target as HTMLElement).closest("button,a,input,textarea,[role='slider']")) {
+        return;
+      }
       setIsDragging(true);
       setStartX(e.clientX);
-      (e.target as HTMLElement).setPointerCapture(e.pointerId);
+      dragXRef.current = 0;
+      setDragX(0);
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     },
     [isTop, exitDirection],
   );
@@ -42,22 +50,36 @@ export function BeatSwipeCard({
   const handlePointerMove = useCallback(
     (e: React.PointerEvent) => {
       if (!isDragging) return;
-      setDragX(e.clientX - startX);
+      const next = e.clientX - startX;
+      dragXRef.current = next;
+      setDragX(next);
     },
     [isDragging, startX],
   );
 
-  const handlePointerUp = useCallback(() => {
+  const endDrag = useCallback(() => {
     if (!isDragging) return;
     setIsDragging(false);
-
-    if (dragX > SWIPE_THRESHOLD) {
+    const dx = dragXRef.current;
+    dragXRef.current = 0;
+    setDragX(0);
+    if (dx > SWIPE_THRESHOLD) {
       onSwipeRight();
-    } else if (dragX < -SWIPE_THRESHOLD) {
+    } else if (dx < -SWIPE_THRESHOLD) {
       onSwipeLeft();
     }
+  }, [isDragging, onSwipeLeft, onSwipeRight]);
+
+  const handlePointerUp = useCallback(() => {
+    endDrag();
+  }, [endDrag]);
+
+  const handlePointerCancel = useCallback(() => {
+    if (!isDragging) return;
+    setIsDragging(false);
+    dragXRef.current = 0;
     setDragX(0);
-  }, [isDragging, dragX, onSwipeLeft, onSwipeRight]);
+  }, [isDragging]);
 
   // Compute transform
   let translateX = dragX;
@@ -81,16 +103,18 @@ export function BeatSwipeCard({
 
   return (
     <div
-      className="absolute inset-0 touch-none select-none"
+      className="absolute inset-0 touch-none select-none active:cursor-grabbing"
       style={{
         transform: `translateX(${translateX}px) rotate(${rotation}deg)`,
         opacity: cardOpacity,
         transition,
         zIndex: 10,
+        cursor: isTop ? "grab" : "default",
       }}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerCancel}
     >
       {/* Beat card — matches prototype */}
       <div
@@ -149,19 +173,16 @@ export function BeatSwipeCard({
               {beat.key && <span className="pill">{beat.key}</span>}
               {beat.genre && <span className="pill">{beat.genre}</span>}
             </div>
+            <div className="mt-4 px-1">
+              <AudioPlayer
+                beatId={beat.id}
+                previewUrl={beat.audio_preview_url}
+                compact={false}
+              />
+            </div>
           </div>
         </div>
 
-        {/* Progress bar */}
-        <div
-          className="absolute bottom-0 left-0 right-0"
-          style={{ height: 3, background: "rgba(255,255,255,0.1)" }}
-        >
-          <div
-            className="h-full rounded-sm"
-            style={{ width: "65%", background: "var(--color-brand-gradient)" }}
-          />
-        </div>
       </div>
     </div>
   );

@@ -1,8 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useCallback } from "react";
-import { Play, Pause, Volume2 } from "lucide-react";
+import { Play, Pause } from "lucide-react";
 import { useAudioStore } from "@/stores/audio-store";
+
+/** Marketplace preview cap (seconds) */
+const PREVIEW_MAX_SEC = 30;
 
 interface AudioPlayerProps {
   beatId: string;
@@ -59,14 +62,21 @@ export function AudioPlayer({ beatId, previewUrl, compact }: AudioPlayerProps) {
   }, [isActive, isPlaying, beatId, previewUrl, play, pause, resume]);
 
   const handleTimeUpdate = useCallback(() => {
-    if (audioRef.current && isActive) {
-      setCurrentTime(audioRef.current.currentTime);
+    if (!audioRef.current || !isActive) return;
+    const audio = audioRef.current;
+    if (audio.currentTime >= PREVIEW_MAX_SEC) {
+      audio.pause();
+      setCurrentTime(PREVIEW_MAX_SEC);
+      pause();
+      return;
     }
-  }, [isActive, setCurrentTime]);
+    setCurrentTime(audio.currentTime);
+  }, [isActive, setCurrentTime, pause]);
 
   const handleLoadedMetadata = useCallback(() => {
     if (audioRef.current && isActive) {
-      setDuration(audioRef.current.duration);
+      const d = audioRef.current.duration;
+      setDuration(Number.isFinite(d) ? Math.min(d, PREVIEW_MAX_SEC) : PREVIEW_MAX_SEC);
     }
   }, [isActive, setDuration]);
 
@@ -75,12 +85,18 @@ export function AudioPlayer({ beatId, previewUrl, compact }: AudioPlayerProps) {
       if (!audioRef.current || !isActive) return;
       const rect = e.currentTarget.getBoundingClientRect();
       const ratio = (e.clientX - rect.left) / rect.width;
-      audioRef.current.currentTime = ratio * audioRef.current.duration;
+      const cap = duration > 0 ? Math.min(duration, PREVIEW_MAX_SEC) : PREVIEW_MAX_SEC;
+      audioRef.current.currentTime = Math.min(ratio * cap, PREVIEW_MAX_SEC);
     },
-    [isActive],
+    [isActive, duration],
   );
 
-  const progress = isActive && duration > 0 ? (currentTime / duration) * 100 : 0;
+  const effectiveDuration =
+    duration > 0 ? Math.min(duration, PREVIEW_MAX_SEC) : PREVIEW_MAX_SEC;
+  const progress =
+    isActive && effectiveDuration > 0
+      ? (Math.min(currentTime, PREVIEW_MAX_SEC) / effectiveDuration) * 100
+      : 0;
   const formatTime = (s: number) => {
     const m = Math.floor(s / 60);
     const sec = Math.floor(s % 60);
@@ -131,8 +147,8 @@ export function AudioPlayer({ beatId, previewUrl, compact }: AudioPlayerProps) {
 
             {/* Time */}
             <span className="flex-shrink-0 font-mono text-xs text-text-muted">
-              {isActive ? formatTime(currentTime) : "0:00"} /{" "}
-              {isActive && duration > 0 ? formatTime(duration) : "0:30"}
+              {isActive ? formatTime(Math.min(currentTime, PREVIEW_MAX_SEC)) : "0:00"} /{" "}
+              {formatTime(effectiveDuration)}
             </span>
           </>
         )}
