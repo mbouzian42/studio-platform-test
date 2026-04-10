@@ -266,6 +266,24 @@ export type Database = {
         };
         Relationships: [];
       };
+      beat_favorites: {
+        Row: {
+          user_id: string;
+          beat_id: string;
+          created_at: string;
+        };
+        Insert: {
+          user_id: string;
+          beat_id: string;
+          created_at?: string;
+        };
+        Update: {
+          user_id?: string;
+          beat_id?: string;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
       beat_purchases: {
         Row: {
           id: string;
@@ -556,6 +574,7 @@ export type StudioPricing = Database["public"]["Tables"]["studio_pricing"]["Row"
 export type Engineer = Database["public"]["Tables"]["engineers"]["Row"];
 export type Booking = Database["public"]["Tables"]["bookings"]["Row"];
 export type Beat = Database["public"]["Tables"]["beats"]["Row"];
+export type BeatFavorite = Database["public"]["Tables"]["beat_favorites"]["Row"];
 export type BeatPurchase = Database["public"]["Tables"]["beat_purchases"]["Row"];
 export type MixingOrder = Database["public"]["Tables"]["mixing_orders"]["Row"];
 export type MixingStem = Database["public"]["Tables"]["mixing_stems"]["Row"];

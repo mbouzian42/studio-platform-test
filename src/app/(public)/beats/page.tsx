@@ -6,6 +6,8 @@ import { Music } from "lucide-react";
 import { getPublishedBeats } from "@/actions/beats";
 import { BeatSwipeCard } from "@/components/beats/beat-swipe-card";
 import { BeatsOnboarding } from "@/components/beats/beats-onboarding";
+import { AudioPlayer } from "@/components/beats/audio-player";
+import { useAudioStore } from "@/stores/audio-store";
 import type { Beat } from "@/types";
 
 export default function BeatsPage() {
@@ -16,10 +18,21 @@ export default function BeatsPage() {
   const animatingRef = useRef(false);
   const [loading, setLoading] = useState(true);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [beatDurations, setBeatDurations] = useState<Record<string, number>>({});
+
+  const playAudio = useAudioStore((s) => s.play);
+  const stopAudio = useAudioStore((s) => s.stop);
+  const hasInteracted = useAudioStore((s) => s.hasInteracted);
+  const setInteracted = useAudioStore((s) => s.setInteracted);
 
   useEffect(() => {
-    // Check localStorage after mount (avoids SSR/hydration mismatch)
-    if (!localStorage.getItem("studio_beats_onboarded")) {
+    // Check localStorage after mount (avoids SSR/hydration mismatch).
+    // Returning users (already onboarded) get an implicit interaction flag
+    // so autoplay is attempted immediately; the browser's autoplay policy
+    // is the ultimate gate, and we catch any rejection gracefully.
+    if (localStorage.getItem("studio_beats_onboarded")) {
+      setInteracted();
+    } else {
       setShowOnboarding(true);
     }
 
@@ -31,18 +44,65 @@ export default function BeatsPage() {
       setLoading(false);
     }
     load();
-  }, []);
+  }, [setInteracted]);
+
+  // Stop any audio when leaving the page.
+  useEffect(() => {
+    return () => {
+      stopAudio();
+    };
+  }, [stopAudio]);
+
+  // Prefetch metadata for each beat so durations are known before a card
+  // becomes active. Prevents the time display from flashing "0:30" before
+  // snapping to the real duration on shorter preview files.
+  useEffect(() => {
+    if (beats.length === 0) return;
+    const audios: HTMLAudioElement[] = [];
+    for (const beat of beats) {
+      if (!beat.audio_preview_url) continue;
+      const audio = new Audio();
+      audio.preload = "metadata";
+      audio.src = beat.audio_preview_url;
+      const onLoaded = () => {
+        setBeatDurations((prev) =>
+          prev[beat.id] ? prev : { ...prev, [beat.id]: audio.duration },
+        );
+      };
+      audio.addEventListener("loadedmetadata", onLoaded);
+      audios.push(audio);
+    }
+    return () => {
+      for (const a of audios) {
+        a.src = "";
+        a.load();
+      }
+    };
+  }, [beats]);
+
+  // Autoplay the active card's preview whenever it changes (and once the
+  // user has interacted with the page, so browser autoplay policy allows it).
+  useEffect(() => {
+    if (!hasInteracted) return;
+    if (beats.length === 0 || currentIndex >= beats.length) return;
+    const current = beats[currentIndex];
+    if (current?.audio_preview_url) {
+      playAudio(current.id, current.audio_preview_url);
+    }
+  }, [beats, currentIndex, hasInteracted, playAudio]);
 
   const handleOnboardingComplete = useCallback(() => {
     localStorage.setItem("studio_beats_onboarded", "true");
     setShowOnboarding(false);
-  }, []);
+    setInteracted();
+  }, [setInteracted]);
 
   const animateAndAdvance = useCallback(
     (direction: "left" | "right") => {
       if (animatingRef.current) return;
       animatingRef.current = true;
       setExitDirection(direction);
+      stopAudio();
 
       setTimeout(() => {
         if (direction === "right" && beats[currentIndex]) {
@@ -53,7 +113,7 @@ export default function BeatsPage() {
         animatingRef.current = false;
       }, 400);
     },
-    [beats, currentIndex, router],
+    [beats, currentIndex, router, stopAudio],
   );
 
   const handleSwipeLeft = useCallback(() => {
@@ -157,8 +217,19 @@ export default function BeatsPage() {
               exitDirection={exitDirection}
               onSwipeLeft={handleSwipeLeft}
               onSwipeRight={handleSwipeRight}
+              durationHint={beatDurations[beats[currentIndex].id]}
             />
           </div>
+        </div>
+
+        {/* Audio controls for the active card */}
+        <div className="mx-auto mt-4 w-full max-w-[340px] px-4">
+          <AudioPlayer
+            key={beats[currentIndex].id}
+            beatId={beats[currentIndex].id}
+            previewUrl={beats[currentIndex].audio_preview_url}
+            durationHint={beatDurations[beats[currentIndex].id]}
+          />
         </div>
 
         {/* Action buttons — prototype style */}

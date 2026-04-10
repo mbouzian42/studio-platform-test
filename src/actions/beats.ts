@@ -628,3 +628,89 @@ export async function getBeatmakerSales(): Promise<ActionResponse<BeatmakerSales
 
   return { success: true, data: { totalSold, totalRevenue, salesByBeat, recentSales } };
 }
+
+// ── Favorites ──
+
+export async function addFavorite(
+  beatId: string,
+): Promise<ActionResponse> {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { success: false, error: "Connexion requise" };
+
+  const { error } = await supabase
+    .from("beat_favorites")
+    .insert({ user_id: user.id, beat_id: beatId });
+
+  // Duplicate is not an error for the caller — the beat is already favorited.
+  if (error && error.code !== "23505") {
+    return { success: false, error: error.message };
+  }
+  return { success: true, data: undefined };
+}
+
+export async function removeFavorite(
+  beatId: string,
+): Promise<ActionResponse> {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { success: false, error: "Connexion requise" };
+
+  const { error } = await supabase
+    .from("beat_favorites")
+    .delete()
+    .eq("user_id", user.id)
+    .eq("beat_id", beatId);
+
+  if (error) return { success: false, error: error.message };
+  return { success: true, data: undefined };
+}
+
+export async function getMyFavorites(): Promise<ActionResponse<Beat[]>> {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { success: false, error: "Connexion requise" };
+
+  // Fetch the user's favorites joined with the beat rows.
+  const { data, error } = await supabase
+    .from("beat_favorites")
+    .select("created_at, beat:beats(*)")
+    .eq("user_id", user.id)
+    .order("created_at", { ascending: false })
+    .returns<{ created_at: string; beat: Beat | null }[]>();
+
+  if (error) return { success: false, error: error.message };
+
+  const beats = (data ?? [])
+    .map((row) => row.beat)
+    .filter((b): b is Beat => b !== null);
+
+  return { success: true, data: beats };
+}
+
+export async function getMyFavoriteIds(): Promise<ActionResponse<string[]>> {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { success: true, data: [] };
+
+  const { data, error } = await supabase
+    .from("beat_favorites")
+    .select("beat_id")
+    .eq("user_id", user.id)
+    .returns<{ beat_id: string }[]>();
+
+  if (error) return { success: false, error: error.message };
+  return { success: true, data: (data ?? []).map((r) => r.beat_id) };
+}

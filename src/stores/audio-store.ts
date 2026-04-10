@@ -7,6 +7,7 @@ interface AudioState {
   duration: number;
   volume: number;
   audioUrl: string | null;
+  hasInteracted: boolean;
 
   play: (beatId: string, url: string) => void;
   pause: () => void;
@@ -15,6 +16,7 @@ interface AudioState {
   setCurrentTime: (time: number) => void;
   setDuration: (duration: number) => void;
   setVolume: (volume: number) => void;
+  setInteracted: () => void;
 }
 
 export const useAudioStore = create<AudioState>((set, get) => ({
@@ -24,6 +26,7 @@ export const useAudioStore = create<AudioState>((set, get) => ({
   duration: 0,
   volume: 0.8,
   audioUrl: null,
+  hasInteracted: false,
 
   play: (beatId, url) => {
     set({
@@ -55,4 +58,5 @@ export const useAudioStore = create<AudioState>((set, get) => ({
   setCurrentTime: (time) => set({ currentTime: time }),
   setDuration: (duration) => set({ duration }),
   setVolume: (volume) => set({ volume }),
+  setInteracted: () => set({ hasInteracted: true }),
 }));
