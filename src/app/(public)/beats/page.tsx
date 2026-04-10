@@ -3,11 +3,13 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Music } from "lucide-react";
-import { getPublishedBeats } from "@/actions/beats";
+import { addFavorite, getMyFavoriteIds, getPublishedBeats } from "@/actions/beats";
+import { createClient } from "@/lib/supabase/client";
 import { BeatSwipeCard } from "@/components/beats/beat-swipe-card";
 import { BeatsOnboarding } from "@/components/beats/beats-onboarding";
 import { AudioPlayer } from "@/components/beats/audio-player";
 import { useAudioStore } from "@/stores/audio-store";
+import { toast } from "@/components/ui/toaster";
 import type { Beat } from "@/types";
 
 export default function BeatsPage() {
@@ -19,6 +21,8 @@ export default function BeatsPage() {
   const [loading, setLoading] = useState(true);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [beatDurations, setBeatDurations] = useState<Record<string, number>>({});
+  const [isAuthed, setIsAuthed] = useState(false);
+  const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
 
   const playAudio = useAudioStore((s) => s.play);
   const stopAudio = useAudioStore((s) => s.stop);
@@ -37,9 +41,18 @@ export default function BeatsPage() {
     }
 
     async function load() {
-      const result = await getPublishedBeats();
-      if (result.success) {
-        setBeats(result.data);
+      const supabase = createClient();
+      const [{ data: { user } }, beatsResult, favIdsResult] = await Promise.all([
+        supabase.auth.getUser(),
+        getPublishedBeats(),
+        getMyFavoriteIds(),
+      ]);
+      setIsAuthed(!!user);
+      if (beatsResult.success) {
+        setBeats(beatsResult.data);
+      }
+      if (favIdsResult.success) {
+        setFavoriteIds(new Set(favIdsResult.data));
       }
       setLoading(false);
     }
@@ -105,15 +118,12 @@ export default function BeatsPage() {
       stopAudio();
 
       setTimeout(() => {
-        if (direction === "right" && beats[currentIndex]) {
-          router.push(`/beats/${beats[currentIndex].slug}`);
-        }
         setCurrentIndex((i) => i + 1);
         setExitDirection(null);
         animatingRef.current = false;
       }, 400);
     },
-    [beats, currentIndex, router, stopAudio],
+    [stopAudio],
   );
 
   const handleSwipeLeft = useCallback(() => {
@@ -121,8 +131,53 @@ export default function BeatsPage() {
   }, [animateAndAdvance]);
 
   const handleSwipeRight = useCallback(() => {
+    const beat = beats[currentIndex];
+    if (!beat) return;
+
+    // Anon users: prompt login and bail out (don't advance the deck).
+    if (!isAuthed) {
+      stopAudio();
+      router.push("/login?redirect=/beats");
+      return;
+    }
+
+    // Already favorited → just advance, don't re-insert or toast.
+    if (favoriteIds.has(beat.id)) {
+      animateAndAdvance("right");
+      return;
+    }
+
+    // Optimistic update so the UI reflects the favorite immediately even if
+    // the user swipes again before the server responds.
+    setFavoriteIds((prev) => {
+      const next = new Set(prev);
+      next.add(beat.id);
+      return next;
+    });
     animateAndAdvance("right");
-  }, [animateAndAdvance]);
+
+    addFavorite(beat.id).then((result) => {
+      if (!result.success) {
+        // Rollback on failure.
+        setFavoriteIds((prev) => {
+          const next = new Set(prev);
+          next.delete(beat.id);
+          return next;
+        });
+        toast({
+          title: "Erreur",
+          description: result.error,
+          variant: "error",
+        });
+        return;
+      }
+      toast({
+        title: "Ajouté aux favoris",
+        description: beat.title,
+        variant: "success",
+      });
+    });
+  }, [beats, currentIndex, isAuthed, favoriteIds, animateAndAdvance, stopAudio, router]);
 
   if (loading) {
     return (
