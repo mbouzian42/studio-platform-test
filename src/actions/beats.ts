@@ -1,6 +1,8 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { trimAudioPreview } from "@/lib/audio-utils";
 import type { ActionResponse } from "@/types";
 import type { Beat, BeatPurchase, LicenseType } from "@/types";
 import { createCheckoutSession } from "@/lib/stripe";
@@ -290,12 +292,17 @@ export async function createBeat(input: {
   return { success: true, data };
 }
 
-const AUDIO_EXTENSIONS = [".wav", ".aiff", ".flac"];
+const AUDIO_EXTENSIONS = [".wav", ".mp3", ".aiff", ".flac"];
 const IMAGE_EXTENSIONS = [".jpg", ".jpeg", ".png", ".webp"];
 const MAX_AUDIO_SIZE = 200 * 1024 * 1024; // 200MB
 const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10MB
 
-const VALID_AUDIO_MIMES = ["audio/wav", "audio/x-wav", "audio/aiff", "audio/x-aiff", "audio/flac"];
+const VALID_AUDIO_MIMES = [
+  "audio/wav", "audio/x-wav",
+  "audio/mpeg", "audio/mp3",
+  "audio/aiff", "audio/x-aiff",
+  "audio/flac",
+];
 const VALID_IMAGE_MIMES = ["image/jpeg", "image/png", "image/webp"];
 
 function getExtension(filename: string): string {
@@ -402,34 +409,39 @@ export async function createBeatWithFiles(
   }
 
   const basePath = `${user.id}/${beat.id}`;
+  const adminClient = createAdminClient();
 
   try {
-    // Step 2: Upload cover image to beat-previews
+    // Step 2: Upload cover image to beat-previews (using admin client to bypass RLS)
     const coverPath = `${basePath}/cover${coverExt}`;
-    const { error: coverErr } = await supabase.storage
+    const { error: coverErr } = await adminClient.storage
       .from("beat-previews")
       .upload(coverPath, coverFile, { upsert: true });
     if (coverErr) throw new Error(`Cover upload: ${coverErr.message}`);
 
     // Step 3: Upload full audio to beat-files (private)
     const audioPath = `${basePath}/audio${audioExt}`;
-    const { error: audioErr } = await supabase.storage
+    const { error: audioErr } = await adminClient.storage
       .from("beat-files")
       .upload(audioPath, audioFile, { upsert: true });
     if (audioErr) throw new Error(`Audio upload: ${audioErr.message}`);
 
-    // Step 4: Upload same audio to beat-previews (public preview)
-    const previewPath = `${basePath}/preview${audioExt}`;
-    const { error: previewErr } = await supabase.storage
+    // Step 4: Generate 30-second preview and upload to beat-previews
+    const previewBuffer = await trimAudioPreview(audioFile, "mp3");
+    const previewPath = `${basePath}/preview.mp3`;
+    const { error: previewErr } = await adminClient.storage
       .from("beat-previews")
-      .upload(previewPath, audioFile, { upsert: true });
+      .upload(previewPath, previewBuffer, {
+        upsert: true,
+        contentType: "audio/mpeg",
+      });
     if (previewErr) throw new Error(`Preview upload: ${previewErr.message}`);
 
     // Step 5: Get public URLs
-    const { data: coverUrl } = supabase.storage
+    const { data: coverUrl } = adminClient.storage
       .from("beat-previews")
       .getPublicUrl(coverPath);
-    const { data: previewUrl } = supabase.storage
+    const { data: previewUrl } = adminClient.storage
       .from("beat-previews")
       .getPublicUrl(previewPath);
 
@@ -454,11 +466,11 @@ export async function createBeatWithFiles(
     // Cleanup on failure: delete beat record and any uploaded files
     try {
       await supabase.from("beats").delete().eq("id", beat.id);
-      await supabase.storage.from("beat-previews").remove([
+      await adminClient.storage.from("beat-previews").remove([
         `${basePath}/cover${coverExt}`,
-        `${basePath}/preview${audioExt}`,
+        `${basePath}/preview.mp3`,
       ]);
-      await supabase.storage.from("beat-files").remove([`${basePath}/audio${audioExt}`]);
+      await adminClient.storage.from("beat-files").remove([`${basePath}/audio${audioExt}`]);
     } catch (cleanupErr) {
       console.error("[createBeatWithFiles] Cleanup failed for beat", beat.id, cleanupErr);
     }
@@ -619,4 +631,97 @@ export async function getBeatmakerSales(): Promise<ActionResponse<BeatmakerSales
   }));
 
   return { success: true, data: { totalSold, totalRevenue, salesByBeat, recentSales } };
+}
+
+// ── Favorites ──
+
+export async function addToFavorites(beatId: string): Promise<ActionResponse> {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { success: false, error: "Connexion requise" };
+
+  const { error } = await supabase
+    .from("beat_favorites")
+    .insert({ user_id: user.id, beat_id: beatId });
+
+  if (error) {
+    if (error.code === "23505") {
+      return { success: true, data: undefined };
+    }
+    return { success: false, error: error.message };
+  }
+
+  return { success: true, data: undefined };
+}
+
+export async function removeFromFavorites(beatId: string): Promise<ActionResponse> {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { success: false, error: "Connexion requise" };
+
+  const { error } = await supabase
+    .from("beat_favorites")
+    .delete()
+    .eq("user_id", user.id)
+    .eq("beat_id", beatId);
+
+  if (error) return { success: false, error: error.message };
+  return { success: true, data: undefined };
+}
+
+export async function getFavorites(): Promise<ActionResponse<Beat[]>> {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { success: false, error: "Connexion requise" };
+
+  const { data: favorites, error: favError } = await supabase
+    .from("beat_favorites")
+    .select("beat_id")
+    .eq("user_id", user.id)
+    .order("created_at", { ascending: false });
+
+  if (favError) return { success: false, error: favError.message };
+  if (!favorites || favorites.length === 0) return { success: true, data: [] };
+
+  const beatIds = favorites.map((f) => f.beat_id);
+  const { data: beats, error: beatsError } = await supabase
+    .from("beats")
+    .select("*")
+    .in("id", beatIds)
+    .returns<Beat[]>();
+
+  if (beatsError) return { success: false, error: beatsError.message };
+
+  const orderedBeats = beatIds
+    .map((id) => beats?.find((b) => b.id === id))
+    .filter((b): b is Beat => b !== undefined);
+
+  return { success: true, data: orderedBeats };
+}
+
+export async function isBeatFavorited(beatId: string): Promise<ActionResponse<boolean>> {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { success: true, data: false };
+
+  const { data } = await supabase
+    .from("beat_favorites")
+    .select("id")
+    .eq("user_id", user.id)
+    .eq("beat_id", beatId)
+    .maybeSingle();
+
+  return { success: true, data: !!data };
 }
