@@ -3,11 +3,13 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Music } from "lucide-react";
-import { getPublishedBeats } from "@/actions/beats";
+import { getPublishedBeats, addToFavorites } from "@/actions/beats";
 import { BeatSwipeCard } from "@/components/beats/beat-swipe-card";
 import { BeatsOnboarding } from "@/components/beats/beats-onboarding";
 import { AudioPlayer } from "@/components/beats/audio-player";
 import { useAudioStore } from "@/stores/audio-store";
+import { createClient } from "@/lib/supabase/client";
+import { toast } from "@/components/ui/toaster";
 import type { Beat } from "@/types";
 
 export default function BeatsPage() {
@@ -67,13 +69,39 @@ export default function BeatsPage() {
 
       setExitDirection(direction);
 
-      setTimeout(() => {
+      // Capture the beat reference before the index changes
+      const swipedBeat = beats[currentIndex];
+
+      setTimeout(async () => {
+        // Handle swipe-right → add to favorites
+        if (direction === "right" && swipedBeat) {
+          const supabase = createClient();
+          const { data: { user } } = await supabase.auth.getUser();
+
+          if (user) {
+            const result = await addToFavorites(swipedBeat.id);
+            if (result.success) {
+              toast({
+                title: "❤️ Ajouté aux favoris",
+                description: swipedBeat.title,
+                variant: "success",
+              });
+            }
+          } else {
+            toast({
+              title: "Connecte-toi",
+              description: "Crée un compte pour sauvegarder tes favoris",
+              variant: "default",
+            });
+          }
+        }
+
         setCurrentIndex((i) => i + 1);
         setExitDirection(null);
         animatingRef.current = false;
       }, 400);
     },
-    [stop],
+    [stop, beats, currentIndex],
   );
 
   const handleSwipeLeft = useCallback(() => {

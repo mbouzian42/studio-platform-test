@@ -2,7 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import type { ActionResponse } from "@/types";
-import type { Beat, BeatPurchase, LicenseType } from "@/types";
+import type { Beat, BeatPurchase, BeatFavorite, LicenseType } from "@/types";
 import { createCheckoutSession } from "@/lib/stripe";
 
 export async function getPublishedBeats(): Promise<ActionResponse<Beat[]>> {
@@ -619,4 +619,111 @@ export async function getBeatmakerSales(): Promise<ActionResponse<BeatmakerSales
   }));
 
   return { success: true, data: { totalSold, totalRevenue, salesByBeat, recentSales } };
+}
+
+// ============================================================================
+// FAVORITES
+// ============================================================================
+
+export async function addToFavorites(
+  beatId: string,
+): Promise<ActionResponse<BeatFavorite>> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { success: false, error: "Connexion requise" };
+
+  const { data, error } = await supabase
+    .from("beat_favorites")
+    .insert({ user_id: user.id, beat_id: beatId })
+    .select()
+    .single<BeatFavorite>();
+
+  if (error) {
+    // Unique constraint violation — already favorited, return existing row
+    if (error.code === "23505") {
+      const { data: existing } = await supabase
+        .from("beat_favorites")
+        .select()
+        .eq("user_id", user.id)
+        .eq("beat_id", beatId)
+        .single<BeatFavorite>();
+      if (existing) return { success: true, data: existing };
+    }
+    return { success: false, error: error.message };
+  }
+
+  // Increment like_count on the beat (best effort)
+  const { data: beat } = await supabase
+    .from("beats")
+    .select("like_count")
+    .eq("id", beatId)
+    .single();
+  if (beat) {
+    await supabase
+      .from("beats")
+      .update({ like_count: (beat.like_count ?? 0) + 1 })
+      .eq("id", beatId);
+  }
+
+  return { success: true, data };
+}
+
+export async function removeFromFavorites(
+  beatId: string,
+): Promise<ActionResponse> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { success: false, error: "Connexion requise" };
+
+  const { error } = await supabase
+    .from("beat_favorites")
+    .delete()
+    .eq("user_id", user.id)
+    .eq("beat_id", beatId);
+
+  if (error) return { success: false, error: error.message };
+
+  return { success: true, data: undefined };
+}
+
+export async function getFavorites(): Promise<ActionResponse<Beat[]>> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { success: false, error: "Connexion requise" };
+
+  // Get all favorite beat IDs for this user
+  const { data: favorites, error: favError } = await supabase
+    .from("beat_favorites")
+    .select("beat_id")
+    .eq("user_id", user.id)
+    .order("created_at", { ascending: false })
+    .returns<{ beat_id: string }[]>();
+
+  if (favError) return { success: false, error: favError.message };
+  if (!favorites || favorites.length === 0) return { success: true, data: [] };
+
+  const beatIds = favorites.map((f) => f.beat_id);
+
+  // Fetch full beat data for those IDs
+  const { data: beats, error: beatsError } = await supabase
+    .from("beats")
+    .select("*")
+    .in("id", beatIds)
+    .returns<Beat[]>();
+
+  if (beatsError) return { success: false, error: beatsError.message };
+
+  // Preserve the favorites order (most recent first)
+  const beatsMap = new Map((beats ?? []).map((b) => [b.id, b]));
+  const ordered = beatIds
+    .map((id) => beatsMap.get(id))
+    .filter((b): b is Beat => b !== undefined);
+
+  return { success: true, data: ordered };
 }
