@@ -26,9 +26,15 @@ DROP POLICY IF EXISTS "beat-previews: public read" ON storage.objects;
 DROP POLICY IF EXISTS "beat-previews: auth insert own" ON storage.objects;
 DROP POLICY IF EXISTS "beat-previews: auth update own" ON storage.objects;
 DROP POLICY IF EXISTS "beat-previews: auth delete own" ON storage.objects;
+DROP POLICY IF EXISTS "beat-previews: authenticated upload" ON storage.objects;
+DROP POLICY IF EXISTS "beat-previews: authenticated update" ON storage.objects;
+DROP POLICY IF EXISTS "beat-previews: authenticated delete" ON storage.objects;
 DROP POLICY IF EXISTS "beat-files: auth insert own" ON storage.objects;
 DROP POLICY IF EXISTS "beat-files: auth update own" ON storage.objects;
 DROP POLICY IF EXISTS "beat-files: auth delete own" ON storage.objects;
+DROP POLICY IF EXISTS "beat-files: authenticated upload" ON storage.objects;
+DROP POLICY IF EXISTS "beat-files: authenticated update" ON storage.objects;
+DROP POLICY IF EXISTS "beat-files: authenticated delete" ON storage.objects;
 
 -- beat-previews: Anyone can read (public bucket)
 CREATE POLICY "beat-previews: public read"
@@ -36,56 +42,39 @@ CREATE POLICY "beat-previews: public read"
   TO public
   USING (bucket_id = 'beat-previews');
 
--- beat-previews: Authenticated users can upload to their own folder
-CREATE POLICY "beat-previews: auth insert own"
+-- beat-previews: Authenticated users can upload
+-- Role check is done in application code (admin/engineer/beatmaker)
+CREATE POLICY "beat-previews: authenticated upload"
   ON storage.objects FOR INSERT
   TO authenticated
-  WITH CHECK (
-    bucket_id = 'beat-previews'
-    AND (storage.foldername(name))[1] = auth.uid()::text
-  );
+  WITH CHECK (bucket_id = 'beat-previews');
 
--- beat-previews: Authenticated users can update their own files
-CREATE POLICY "beat-previews: auth update own"
+-- beat-previews: Authenticated users can update
+CREATE POLICY "beat-previews: authenticated update"
   ON storage.objects FOR UPDATE
   TO authenticated
-  USING (
-    bucket_id = 'beat-previews'
-    AND (storage.foldername(name))[1] = auth.uid()::text
-  );
+  USING (bucket_id = 'beat-previews');
 
--- beat-previews: Authenticated users can delete their own files
-CREATE POLICY "beat-previews: auth delete own"
+-- beat-previews: Authenticated users can delete
+CREATE POLICY "beat-previews: authenticated delete"
   ON storage.objects FOR DELETE
   TO authenticated
-  USING (
-    bucket_id = 'beat-previews'
-    AND (storage.foldername(name))[1] = auth.uid()::text
-  );
+  USING (bucket_id = 'beat-previews');
 
--- beat-files: Authenticated users can upload to their own folder
-CREATE POLICY "beat-files: auth insert own"
+-- beat-files: Authenticated users can upload
+CREATE POLICY "beat-files: authenticated upload"
   ON storage.objects FOR INSERT
   TO authenticated
-  WITH CHECK (
-    bucket_id = 'beat-files'
-    AND (storage.foldername(name))[1] = auth.uid()::text
-  );
+  WITH CHECK (bucket_id = 'beat-files');
 
--- beat-files: Authenticated users can update their own files
-CREATE POLICY "beat-files: auth update own"
+-- beat-files: Authenticated users can update
+CREATE POLICY "beat-files: authenticated update"
   ON storage.objects FOR UPDATE
   TO authenticated
-  USING (
-    bucket_id = 'beat-files'
-    AND (storage.foldername(name))[1] = auth.uid()::text
-  );
+  USING (bucket_id = 'beat-files');
 
--- beat-files: Authenticated users can delete their own files
-CREATE POLICY "beat-files: auth delete own"
+-- beat-files: Authenticated users can delete
+CREATE POLICY "beat-files: authenticated delete"
   ON storage.objects FOR DELETE
   TO authenticated
-  USING (
-    bucket_id = 'beat-files'
-    AND (storage.foldername(name))[1] = auth.uid()::text
-  );
+  USING (bucket_id = 'beat-files');
