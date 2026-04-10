@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Eye, EyeOff, Trash2, Music } from "lucide-react";
-import { checkAdminAccess } from "@/actions/admin";
+import { checkAdminBeatsSectionAccess } from "@/actions/admin";
 import {
   getAdminBeats,
   adminUpdateBeat,
@@ -29,8 +29,8 @@ export default function AdminBeatsCatalogPage() {
 
   useEffect(() => {
     async function load() {
-      const access = await checkAdminAccess();
-      if (!access.success || !access.data.isAdmin) {
+      const access = await checkAdminBeatsSectionAccess();
+      if (!access.success || !access.data.allowed) {
         router.push("/");
         return;
       }
@@ -121,9 +121,17 @@ export default function AdminBeatsCatalogPage() {
         Dashboard
       </Link>
 
-      <h1 className="font-display text-[30px] font-bold leading-tight">
-        Catalogue Beats
-      </h1>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <h1 className="font-display text-[30px] font-bold leading-tight">
+          Catalogue Beats
+        </h1>
+        <Link
+          href="/admin/beats/upload"
+          className="inline-flex shrink-0 items-center justify-center rounded-lg bg-brand-gradient px-5 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+        >
+          Ajouter un beat
+        </Link>
+      </div>
       <p className="mt-1 text-sm text-text-secondary">
         {beats.length} beat{beats.length > 1 ? "s" : ""} au total
       </p>

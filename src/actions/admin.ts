@@ -36,6 +36,28 @@ export async function checkAdminAccess(): Promise<ActionResponse<{ isAdmin: bool
   return { success: true, data: { isAdmin: true } };
 }
 
+/** Admin or engineer — catalogue + upload in `/admin/beats`. */
+export async function checkAdminBeatsSectionAccess(): Promise<
+  ActionResponse<{ allowed: boolean }>
+> {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { success: false, error: "Non connecté" };
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .single<{ role: string }>();
+
+  const allowed =
+    profile?.role === "admin" || profile?.role === "engineer";
+  return { success: true, data: { allowed } };
+}
+
 export async function getAdminKPIs(): Promise<ActionResponse<AdminKPIs>> {
   const supabase = await createClient();
 
