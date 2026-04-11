@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { Upload, X, FileAudio, ImageIcon } from "lucide-react";
+import Image from "next/image";
 
 interface BeatFileUploaderProps {
   label: string;
@@ -55,21 +56,24 @@ export function BeatFileUploader({
     [onFileChange, validateFile],
   );
 
-  const objectUrlRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    if (file && isImage) {
-      objectUrlRef.current = URL.createObjectURL(file);
-    }
-    return () => {
-      if (objectUrlRef.current) {
-        URL.revokeObjectURL(objectUrlRef.current);
-        objectUrlRef.current = null;
-      }
-    };
-  }, [file, isImage]);
-
-  const imagePreviewSrc = file && isImage ? objectUrlRef.current : previewUrl;
+  const [objectUrl, setObjectUrl] = useState<string | null>(null);
+ 
+   useEffect(() => {
+     let url: string | null = null;
+     if (file && isImage) {
+       url = URL.createObjectURL(file);
+       queueMicrotask(() => setObjectUrl(url));
+     } else {
+       queueMicrotask(() => setObjectUrl(null));
+     }
+     return () => {
+       if (url) {
+         URL.revokeObjectURL(url);
+       }
+     };
+   }, [file, isImage]);
+ 
+   const imagePreviewSrc = file && isImage ? objectUrl : previewUrl;
 
   return (
     <div>
@@ -78,9 +82,11 @@ export function BeatFileUploader({
       {file ? (
         <div className="flex items-center gap-3 rounded-lg border border-border-subtle bg-bg-surface p-3">
           {imagePreviewSrc ? (
-            <img
+            <Image
               src={imagePreviewSrc}
               alt="Aperçu"
+              width={48}
+              height={48}
               className="h-12 w-12 flex-shrink-0 rounded-md object-cover"
             />
           ) : (

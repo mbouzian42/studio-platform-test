@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { X } from "lucide-react";
+import Image from "next/image";
 import type { Beat } from "@/types";
 import { AudioPlayer } from "./audio-player";
 import { LicenseSelector } from "./license-selector";
@@ -68,9 +69,11 @@ export function BeatDetailSheet({ beat, onClose }: BeatDetailSheetProps) {
         <div className="flex gap-4">
           <div className="h-24 w-24 flex-shrink-0 overflow-hidden rounded-xl bg-gradient-to-br from-purple-600/40 to-magenta-500/40">
             {beat.cover_image_url ? (
-              <img
+              <Image
                 src={beat.cover_image_url}
                 alt={beat.title}
+                width={96}
+                height={96}
                 className="h-full w-full object-cover"
               />
             ) : (

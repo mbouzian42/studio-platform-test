@@ -14,18 +14,15 @@ import type { MixingFormula } from "@/types";
 export default function MixingOrderPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [step, setStep] = useState<"formula" | "upload" | "brief" | "recap">(
-    "formula",
-  );
-  const [formula, setFormula] = useState<MixingFormula>("standard");
+  const formulaParam = searchParams.get("formula");
+  const isValidFormula = formulaParam === "standard" || formulaParam === "premium";
 
-  useEffect(() => {
-    const formulaParam = searchParams.get("formula");
-    if (formulaParam === "standard" || formulaParam === "premium") {
-      setFormula(formulaParam);
-      setStep("upload");
-    }
-  }, [searchParams]);
+  const [step, setStep] = useState<"formula" | "upload" | "brief" | "recap">(
+    isValidFormula ? "upload" : "formula",
+  );
+  const [formula, setFormula] = useState<MixingFormula>(
+    isValidFormula ? (formulaParam as MixingFormula) : "standard",
+  );
   const [files, setFiles] = useState<File[]>([]);
   const [brief, setBrief] = useState("");
   const [pending, setPending] = useState(false);

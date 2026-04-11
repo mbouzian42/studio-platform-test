@@ -35,7 +35,6 @@ export async function toggleFavorite(beatId: string): Promise<ActionResponse<boo
     if (error) return { success: false, error: error.message };
 
     // Increment like_count on beat
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (supabase as any).rpc("increment_like_count", { beat_id: beatId });
 
     return { success: true, data: true }; // true means now favorited

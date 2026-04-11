@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { User, LogOut, Trash2, Clock, SlidersHorizontal, Heart } from "lucide-react";
 import Link from "next/link";
+import Image from "next/image";
 import { getProfile, updateProfile, signOut, deleteAccount } from "@/actions/profile";
 import { toast } from "@/components/ui/toaster";
 import type { Profile } from "@/types";
@@ -125,7 +126,13 @@ export default function AccountPage() {
         }}>
           <div className="flex h-full w-full items-center justify-center rounded-full" style={{ background: "linear-gradient(135deg, #2d1b69, #0f3460)" }}>
             {profile.avatar_url ? (
-              <img src={profile.avatar_url} alt={profile.full_name} className="h-full w-full rounded-full object-cover" />
+              <Image 
+                src={profile.avatar_url} 
+                alt={profile.full_name} 
+                width={80}
+                height={80}
+                className="h-full w-full rounded-full object-cover" 
+              />
             ) : (
               <span className="font-display text-2xl font-bold text-white">
                 {profile.full_name?.charAt(0)?.toUpperCase() || "?"}

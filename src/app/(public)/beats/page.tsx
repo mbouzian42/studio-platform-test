@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Music } from "lucide-react";
+import Link from "next/link";
 import { getPublishedBeats } from "@/actions/beats";
 import { BeatSwipeCard } from "@/components/beats/beat-swipe-card";
 import { BeatsOnboarding } from "@/components/beats/beats-onboarding";
@@ -24,7 +25,9 @@ export default function BeatsPage() {
 
   useEffect(() => {
     // Check localStorage after mount
-    if (!localStorage.getItem("studio_beats_onboarded")) {
+    const onboarded = localStorage.getItem("studio_beats_onboarded");
+    if (!onboarded) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setShowOnboarding(true);
     }
 
@@ -107,12 +110,12 @@ export default function BeatsPage() {
         <p className="mt-2 text-sm text-text-secondary">
           Notre catalogue est en cours de préparation. Reviens vite.
         </p>
-        <a
+        <Link
           href="/booking"
           className="mt-6 inline-flex items-center gap-2 rounded-lg bg-brand-gradient px-6 py-3 text-sm font-semibold text-white transition-opacity hover:opacity-90"
         >
           Réserver une session
-        </a>
+        </Link>
       </div>
     );
   }

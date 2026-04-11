@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
@@ -89,12 +90,13 @@ export default function BeatDetailPage() {
         {/* Left: Beat info */}
         <div>
           {/* Cover */}
-          <div className="aspect-square w-full overflow-hidden rounded-xl bg-gradient-to-br from-purple-600/40 to-magenta-500/40">
+          <div className="relative aspect-square w-full overflow-hidden rounded-xl bg-gradient-to-br from-purple-600/40 to-magenta-500/40">
             {beat.cover_image_url ? (
-              <img
+              <Image
                 src={beat.cover_image_url}
                 alt={beat.title}
-                className="h-full w-full object-cover"
+                fill
+                className="object-cover"
               />
             ) : (
               <div className="flex h-full items-center justify-center">

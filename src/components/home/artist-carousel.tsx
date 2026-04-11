@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import Image from "next/image";
 
 
 interface Artist {
@@ -57,10 +58,12 @@ export function ArtistCarousel({ artists }: { artists: Artist[] }) {
           <div key={artist.name} className="artist-vignette">
             <div className="artist-avatar">
               {artist.photo ? (
-                <img
+                <Image
                   className="artist-photo"
                   src={artist.photo}
                   alt={artist.name}
+                  width={48}
+                  height={48}
                 />
               ) : (
                 <div

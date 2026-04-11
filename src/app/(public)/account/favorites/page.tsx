@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Heart, ArrowLeft, Trash2, Music } from "lucide-react";
 import Link from "next/link";
+import Image from "next/image";
 import { getFavorites, toggleFavorite } from "@/actions/favorites";
 import { AudioPlayer } from "@/components/beats/audio-player";
 import { toast } from "@/components/ui/toaster";
@@ -102,9 +103,11 @@ export default function FavoritesPage() {
                 {/* Cover Image */}
                 <div className="h-20 w-20 flex-shrink-0 overflow-hidden rounded-lg bg-bg-primary">
                   {beat.cover_image_url ? (
-                    <img
+                    <Image
                       src={beat.cover_image_url}
                       alt={beat.title}
+                      width={80}
+                      height={80}
                       className="h-full w-full object-cover transition-transform group-hover:scale-105"
                     />
                   ) : (

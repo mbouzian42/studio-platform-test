@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { siteConfig } from "@/config/site";
+import Link from "next/link";
 
 export const metadata: Metadata = {
   title: "Politique de confidentialité — Studio Platform",
@@ -178,12 +179,12 @@ export default function PrivacyPage() {
               {siteConfig.contact.email}
             </a>{" "}
             ou via notre{" "}
-            <a
+            <Link
               href="/#contact"
               className="text-purple-400 hover:text-purple-300"
             >
               formulaire de contact
-            </a>
+            </Link>
             .
           </p>
         </section>
