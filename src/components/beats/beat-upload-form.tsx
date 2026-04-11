@@ -2,12 +2,19 @@
 
 import { useState, useRef } from "react";
 import { Upload, X, Music, Image as ImageIcon, Loader2 } from "lucide-react";
-import { createBeatWithFiles } from "@/actions/beats";
+import { createBeat, finalizeBeatUpload, deleteDraftBeat } from "@/actions/beats";
+import { createClient } from "@/lib/supabase/client";
 import { toast } from "@/components/ui/toaster";
 
 interface BeatUploadFormProps {
   onSuccess: () => void;
   onCancel: () => void;
+}
+
+function getExtension(filename: string): string {
+  const parts = filename.split(".");
+  if (parts.length < 2) return "";
+  return "." + parts.pop()!.toLowerCase();
 }
 
 export function BeatUploadForm({ onSuccess, onCancel }: BeatUploadFormProps) {
@@ -36,31 +43,90 @@ export function BeatUploadForm({ onSuccess, onCancel }: BeatUploadFormProps) {
     }
 
     setLoading(true);
-    const formData = new FormData();
-    formData.append("audio", audioFile);
-    if (previewFile) formData.append("preview", previewFile);
-    formData.append("cover", coverFile);
-    formData.append("metadata", JSON.stringify({
-      title,
-      bpm,
-      key,
-      genre,
-      tags: tags.split(",").map(t => t.trim()).filter(t => t),
-      priceSimple,
-      priceExclusive,
-      isPublished
-    }));
+    let createdBeatId: string | null = null;
+    let userId: string | null = null;
+    const supabase = createClient();
 
     try {
-      const result = await createBeatWithFiles(formData);
-      if (result.success) {
-        toast({ title: "Succès", description: "Le beat a été uploadé avec succès", variant: "success" });
-        onSuccess();
-      } else {
-        toast({ title: "Erreur", description: result.error, variant: "error" });
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Session expirée. Veuillez vous reconnecter.");
+      userId = user.id;
+
+      // 1. Initialiser le record du beat en base (Draft)
+      const initResult = await createBeat({
+        title,
+        bpm,
+        key,
+        genre,
+        tags: tags.split(",").map(t => t.trim()).filter(t => t),
+        priceSimple,
+        priceExclusive,
+        isPublished: false // Toujours non-publié tant que les fichiers ne sont pas là
+      });
+
+      if (!initResult.success) {
+        throw new Error(initResult.error || "Erreur création beat");
       }
-    } catch (error) {
-      toast({ title: "Erreur", description: "Une erreur est survenue lors de l'upload", variant: "error" });
+      if (!initResult.data) {
+        throw new Error("Erreur: données du beat manquantes");
+      }
+      
+      createdBeatId = initResult.data.id;
+      const basePath = `${userId}/${createdBeatId}`;
+
+      // 2. Upload des fichiers
+      const coverExt = getExtension(coverFile.name);
+      const coverPath = `${basePath}/cover${coverExt}`;
+      const { error: coverErr } = await supabase.storage
+        .from("beat-previews")
+        .upload(coverPath, coverFile, { upsert: true, contentType: coverFile.type });
+      if (coverErr) throw new Error("Erreur upload cover: " + coverErr.message);
+
+      const audioExt = getExtension(audioFile.name);
+      const audioPath = `${basePath}/audio${audioExt}`;
+      const { error: audioErr } = await supabase.storage
+        .from("beat-files")
+        .upload(audioPath, audioFile, { upsert: true, contentType: audioFile.type });
+      if (audioErr) throw new Error("Erreur upload audio: " + audioErr.message);
+
+      const previewToUpload = previewFile || audioFile;
+      const previewExt = getExtension(previewToUpload.name);
+      const previewPath = `${basePath}/preview${previewExt}`;
+      const { error: previewErr } = await supabase.storage
+        .from("beat-previews")
+        .upload(previewPath, previewToUpload, { upsert: true, contentType: previewToUpload.type });
+      if (previewErr) throw new Error("Erreur upload preview: " + previewErr.message);
+
+      // 3. Obtenir les URLs publiques
+      const { data: coverUrl } = supabase.storage.from("beat-previews").getPublicUrl(coverPath);
+      const { data: previewUrl } = supabase.storage.from("beat-previews").getPublicUrl(previewPath);
+
+      // 4. Finaliser le process via le serveur (rattachement URLs + publication optionnelle)
+      const finalResult = await finalizeBeatUpload(
+        createdBeatId,
+        {
+          cover_image_url: coverUrl.publicUrl,
+          audio_preview_url: previewUrl.publicUrl,
+          audio_full_url: audioPath
+        },
+        isPublished
+      );
+
+      if (!finalResult.success) {
+        throw new Error(finalResult.error || "Erreur lors de la finalisation");
+      }
+
+      toast({ title: "Succès", description: "Le beat a été uploadé avec succès", variant: "success" });
+      onSuccess();
+    } catch (error: any) {
+      // Nettoyage en cas d'erreur de communication
+      if (createdBeatId && userId) {
+        await deleteDraftBeat(createdBeatId).catch(console.error);
+        const basePath = `${userId}/${createdBeatId}`;
+        supabase.storage.from("beat-previews").remove([`${basePath}/cover${getExtension(coverFile.name)}`, `${basePath}/preview${getExtension((previewFile || audioFile).name)}`]).catch(()=>{});
+        supabase.storage.from("beat-files").remove([`${basePath}/audio${getExtension(audioFile.name)}`]).catch(()=>{});
+      }
+      toast({ title: "Erreur", description: error.message || "Une erreur est survenue lors de l'upload", variant: "error" });
     } finally {
       setLoading(false);
     }

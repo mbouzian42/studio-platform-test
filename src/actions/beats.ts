@@ -529,6 +529,46 @@ export async function updateBeat(
   return { success: true, data };
 }
 
+export async function finalizeBeatUpload(
+  beatId: string,
+  urls: {
+    cover_image_url: string;
+    audio_preview_url: string | null;
+    audio_full_url: string;
+  },
+  isPublished: boolean
+): Promise<ActionResponse<Beat>> {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { success: false, error: "Non connecté" };
+
+  const { data, error } = await supabase
+    .from("beats")
+    .update({
+      cover_image_url: urls.cover_image_url,
+      audio_preview_url: urls.audio_preview_url,
+      audio_full_url: urls.audio_full_url,
+      is_published: isPublished
+    })
+    .eq("id", beatId)
+    .eq("beatmaker_id", user.id)
+    .select()
+    .single<Beat>();
+
+  if (error || !data) return { success: false, error: error?.message ?? "Erreur mise à jour" };
+  return { success: true, data };
+}
+
+export async function deleteDraftBeat(beatId: string): Promise<void> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return;
+  await supabase.from("beats").delete().eq("id", beatId).eq("beatmaker_id", user.id);
+}
+
 export async function toggleBeatPublish(
   beatId: string,
   publish: boolean,
