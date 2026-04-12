@@ -10,33 +10,33 @@ INSERT INTO studios (name, slug, description, image_url, capacity, equipment_hig
 
 -- Studio Pricing (Studio A)
 INSERT INTO studio_pricing (studio_id, day_category, time_category, hourly_rate)
-SELECT id, 'weekday', 'peak', 45.00 FROM studios WHERE slug = 'studio-a'
+SELECT id, 'weekday'::day_category, 'peak'::time_category, 45.00 FROM studios WHERE slug = 'studio-a'
 UNION ALL
-SELECT id, 'weekday', 'off_peak', 35.00 FROM studios WHERE slug = 'studio-a'
+SELECT id, 'weekday'::day_category, 'off_peak'::time_category, 35.00 FROM studios WHERE slug = 'studio-a'
 UNION ALL
-SELECT id, 'weekend', 'peak', 55.00 FROM studios WHERE slug = 'studio-a'
+SELECT id, 'weekend'::day_category, 'peak'::time_category, 55.00 FROM studios WHERE slug = 'studio-a'
 UNION ALL
-SELECT id, 'weekend', 'off_peak', 45.00 FROM studios WHERE slug = 'studio-a';
+SELECT id, 'weekend'::day_category, 'off_peak'::time_category, 45.00 FROM studios WHERE slug = 'studio-a';
 
 -- Studio Pricing (Studio B)
 INSERT INTO studio_pricing (studio_id, day_category, time_category, hourly_rate)
-SELECT id, 'weekday', 'peak', 40.00 FROM studios WHERE slug = 'studio-b'
+SELECT id, 'weekday'::day_category, 'peak'::time_category, 40.00 FROM studios WHERE slug = 'studio-b'
 UNION ALL
-SELECT id, 'weekday', 'off_peak', 30.00 FROM studios WHERE slug = 'studio-b'
+SELECT id, 'weekday'::day_category, 'off_peak'::time_category, 30.00 FROM studios WHERE slug = 'studio-b'
 UNION ALL
-SELECT id, 'weekend', 'peak', 50.00 FROM studios WHERE slug = 'studio-b'
+SELECT id, 'weekend'::day_category, 'peak'::time_category, 50.00 FROM studios WHERE slug = 'studio-b'
 UNION ALL
-SELECT id, 'weekend', 'off_peak', 40.00 FROM studios WHERE slug = 'studio-b';
+SELECT id, 'weekend'::day_category, 'off_peak'::time_category, 40.00 FROM studios WHERE slug = 'studio-b';
 
 -- Studio Pricing (Studio C)
 INSERT INTO studio_pricing (studio_id, day_category, time_category, hourly_rate)
-SELECT id, 'weekday', 'peak', 35.00 FROM studios WHERE slug = 'studio-c'
+SELECT id, 'weekday'::day_category, 'peak'::time_category, 35.00 FROM studios WHERE slug = 'studio-c'
 UNION ALL
-SELECT id, 'weekday', 'off_peak', 25.00 FROM studios WHERE slug = 'studio-c'
+SELECT id, 'weekday'::day_category, 'off_peak'::time_category, 25.00 FROM studios WHERE slug = 'studio-c'
 UNION ALL
-SELECT id, 'weekend', 'peak', 45.00 FROM studios WHERE slug = 'studio-c'
+SELECT id, 'weekend'::day_category, 'peak'::time_category, 45.00 FROM studios WHERE slug = 'studio-c'
 UNION ALL
-SELECT id, 'weekend', 'off_peak', 35.00 FROM studios WHERE slug = 'studio-c';
+SELECT id, 'weekend'::day_category, 'off_peak'::time_category, 35.00 FROM studios WHERE slug = 'studio-c';
 
 -- Platform Settings
 INSERT INTO platform_settings (key, value, description) VALUES

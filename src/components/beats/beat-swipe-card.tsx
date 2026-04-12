@@ -1,6 +1,8 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
+import { Play, Pause } from "lucide-react";
+import { useAudioStore } from "@/stores/audio-store";
 import type { Beat } from "@/types";
 
 interface BeatSwipeCardProps {
@@ -23,6 +25,19 @@ export function BeatSwipeCard({
   isTop,
   exitDirection,
 }: BeatSwipeCardProps) {
+  const {
+    currentBeatId,
+    isPlaying,
+    currentTime,
+    duration,
+    play,
+    pause,
+    resume,
+  } = useAudioStore();
+
+  const isCurrentBeat = currentBeatId === beat.id;
+  const showPlaying = isCurrentBeat && isPlaying;
+
   const [dragX, setDragX] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
   const [startX, setStartX] = useState(0);
@@ -58,6 +73,23 @@ export function BeatSwipeCard({
     }
     setDragX(0);
   }, [isDragging, dragX, onSwipeLeft, onSwipeRight]);
+
+  const handlePlayPause = useCallback(
+    (e: React.MouseEvent | React.PointerEvent) => {
+      e.stopPropagation();
+      if (isCurrentBeat && isPlaying) {
+        pause();
+      } else if (isCurrentBeat) {
+        resume();
+      } else if (beat.audio_preview_url) {
+        play(beat.id, beat.audio_preview_url);
+      }
+    },
+    [isCurrentBeat, isPlaying, beat, play, pause, resume],
+  );
+
+  const progress =
+    isCurrentBeat && duration > 0 ? (currentTime / duration) * 100 : 0;
 
   // Compute transform
   let translateX = dragX;
@@ -114,20 +146,38 @@ export function BeatSwipeCard({
         {/* Content */}
         <div className="relative z-[1] flex h-full flex-col justify-end p-6">
           {/* Waveform */}
-          <div className="flex flex-1 items-center justify-center gap-[3px] py-8">
-            {WAVEFORM_BARS.map((h, i) => (
-              <div
-                key={i}
-                className="w-[3px] rounded-sm"
-                style={{
-                  height: h,
-                  background: "var(--color-brand-gradient)",
-                  opacity: 0.6,
-                  animation: `waveAnimate 1.2s ease-in-out infinite`,
-                  animationDelay: `${i * 0.05}s`,
-                }}
-              />
-            ))}
+          <div className="flex flex-1 flex-col items-center justify-center py-8">
+            <div className="flex items-center justify-center gap-[3px] mb-6">
+              {WAVEFORM_BARS.map((h, i) => (
+                <div
+                  key={i}
+                  className="w-[3px] rounded-sm"
+                  style={{
+                    height: h,
+                    background: "var(--color-brand-gradient)",
+                    opacity: showPlaying ? 0.8 : 0.3,
+                    animation: showPlaying
+                      ? `waveAnimate 1.2s ease-in-out infinite ${i * 0.05}s`
+                      : "none",
+                    transition: "opacity 0.3s ease",
+                  }}
+                />
+              ))}
+            </div>
+
+            {/* Play Button Overlay */}
+            <button
+              type="button"
+              onClick={handlePlayPause}
+              className="flex h-16 w-16 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur-md transition-all hover:scale-105 hover:bg-white/20 active:scale-95"
+              aria-label={showPlaying ? "Pause" : "Play"}
+            >
+              {showPlaying ? (
+                <Pause className="h-8 w-8 fill-current" />
+              ) : (
+                <Play className="ml-1 h-8 w-8 fill-current" />
+              )}
+            </button>
           </div>
 
           {/* Beat info */}
@@ -152,14 +202,16 @@ export function BeatSwipeCard({
           </div>
         </div>
 
-        {/* Progress bar */}
         <div
           className="absolute bottom-0 left-0 right-0"
-          style={{ height: 3, background: "rgba(255,255,255,0.1)" }}
+          style={{ height: 4, background: "rgba(255,255,255,0.05)" }}
         >
           <div
-            className="h-full rounded-sm"
-            style={{ width: "65%", background: "var(--color-brand-gradient)" }}
+            className="h-full transition-[width] duration-300 ease-linear"
+            style={{
+              width: `${progress}%`,
+              background: "var(--color-brand-gradient)",
+            }}
           />
         </div>
       </div>

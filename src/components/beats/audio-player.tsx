@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useCallback } from "react";
-import { Play, Pause, Volume2 } from "lucide-react";
+import { useCallback, useEffect } from "react";
+import { Play, Pause } from "lucide-react";
 import { useAudioStore } from "@/stores/audio-store";
 
 interface AudioPlayerProps {
@@ -11,7 +11,6 @@ interface AudioPlayerProps {
 }
 
 export function AudioPlayer({ beatId, previewUrl, compact }: AudioPlayerProps) {
-  const audioRef = useRef<HTMLAudioElement | null>(null);
   const {
     currentBeatId,
     isPlaying,
@@ -20,31 +19,23 @@ export function AudioPlayer({ beatId, previewUrl, compact }: AudioPlayerProps) {
     play,
     pause,
     resume,
-    setCurrentTime,
-    setDuration,
+    seek,
+    stop,
   } = useAudioStore();
 
   const isActive = currentBeatId === beatId;
 
-  useEffect(() => {
-    if (!audioRef.current) return;
-    const audio = audioRef.current;
-
-    if (isActive && isPlaying) {
-      audio.play().catch(() => {});
-    } else {
-      audio.pause();
-    }
-  }, [isActive, isPlaying]);
-
-  // Cleanup on unmount
+  // Cleanup audio on unmount if this beat is the one playing
   useEffect(() => {
     return () => {
-      if (audioRef.current) {
-        audioRef.current.pause();
+      // We only stop if THIS specific audio player was the one playing
+      // This prevents multi-player pages from stopping other players' audio
+      // though in this store design there's only one global playing beat.
+      if (isActive) {
+        stop();
       }
     };
-  }, []);
+  }, [isActive, stop]);
 
   const handlePlayPause = useCallback(() => {
     if (!previewUrl) return;
@@ -58,30 +49,20 @@ export function AudioPlayer({ beatId, previewUrl, compact }: AudioPlayerProps) {
     }
   }, [isActive, isPlaying, beatId, previewUrl, play, pause, resume]);
 
-  const handleTimeUpdate = useCallback(() => {
-    if (audioRef.current && isActive) {
-      setCurrentTime(audioRef.current.currentTime);
-    }
-  }, [isActive, setCurrentTime]);
-
-  const handleLoadedMetadata = useCallback(() => {
-    if (audioRef.current && isActive) {
-      setDuration(audioRef.current.duration);
-    }
-  }, [isActive, setDuration]);
-
   const handleSeek = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
-      if (!audioRef.current || !isActive) return;
+      if (!isActive || duration === 0) return;
       const rect = e.currentTarget.getBoundingClientRect();
       const ratio = (e.clientX - rect.left) / rect.width;
-      audioRef.current.currentTime = ratio * audioRef.current.duration;
+      seek(ratio * duration);
     },
-    [isActive],
+    [isActive, duration, seek],
   );
 
   const progress = isActive && duration > 0 ? (currentTime / duration) * 100 : 0;
+  
   const formatTime = (s: number) => {
+    if (isNaN(s) || !isFinite(s)) return "0:00";
     const m = Math.floor(s / 60);
     const sec = Math.floor(s % 60);
     return `${m}:${String(sec).padStart(2, "0")}`;
@@ -89,18 +70,6 @@ export function AudioPlayer({ beatId, previewUrl, compact }: AudioPlayerProps) {
 
   return (
     <div className={compact ? "" : "space-y-2"}>
-      {/* Hidden audio element */}
-      {previewUrl && (
-        <audio
-          ref={audioRef}
-          src={isActive ? previewUrl : undefined}
-          preload="none"
-          onTimeUpdate={handleTimeUpdate}
-          onLoadedMetadata={handleLoadedMetadata}
-          onEnded={() => pause()}
-        />
-      )}
-
       {/* Controls */}
       <div className="flex items-center gap-3">
         <button

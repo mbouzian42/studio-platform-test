@@ -118,6 +118,7 @@ export function BeatFileUploader({
             handleFiles(e.dataTransfer.files);
           }}
           onClick={() => {
+            // Keep existing logic for manual use
             const input = document.createElement("input");
             input.type = "file";
             input.accept = accept;
@@ -125,6 +126,7 @@ export function BeatFileUploader({
             input.click();
           }}
         >
+          {/* Standard upload icon and text */}
           {isImage ? (
             <ImageIcon className="mx-auto h-8 w-8 text-text-muted" />
           ) : (

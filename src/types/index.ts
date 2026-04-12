@@ -21,7 +21,6 @@ export type {
   StudioPricing,
   Engineer,
   Booking,
-  Beat,
   BeatPurchase,
   MixingOrder,
   MixingStem,
@@ -40,6 +39,17 @@ export type {
   MixingStemInsert,
   MixingRevisionInsert,
 } from "./database";
+
+import type { Beat } from "./database";
+export type { Beat };
+
+export type Favorite = {
+  id: string;
+  user_id: string;
+  beat_id: string;
+  created_at: string;
+  beat?: Beat; // Joined beat data
+};
 
 /** Standard server action response */
 export type ActionResponse<T = void> =

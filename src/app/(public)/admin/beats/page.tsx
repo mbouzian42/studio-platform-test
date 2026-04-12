@@ -121,12 +121,23 @@ export default function AdminBeatsCatalogPage() {
         Dashboard
       </Link>
 
-      <h1 className="font-display text-[30px] font-bold leading-tight">
-        Catalogue Beats
-      </h1>
-      <p className="mt-1 text-sm text-text-secondary">
-        {beats.length} beat{beats.length > 1 ? "s" : ""} au total
-      </p>
+      <div className="mt-8 flex items-center justify-between gap-4 flex-wrap">
+        <div>
+           <h1 className="font-display text-[30px] font-bold leading-tight">
+            Catalogue Beats
+          </h1>
+          <p className="mt-1 text-sm text-text-secondary">
+            {beats.length} beat{beats.length > 1 ? "s" : ""} au total
+          </p>
+        </div>
+        <Link 
+            href="/admin/beats/upload"
+            className="inline-flex items-center gap-2 rounded-lg bg-brand-gradient px-6 py-3 font-display font-bold text-white shadow-lg transition-transform hover:translate-y-[-2px]"
+        >
+            <Music className="h-4 w-4" />
+            Nouveau Beat
+        </Link>
+      </div>
 
       <div className="mt-8 space-y-3">
         {beats.length === 0 ? (
@@ -226,14 +237,11 @@ export default function AdminBeatsCatalogPage() {
                       className="flex items-center gap-1 rounded-lg border border-border-default px-3 py-1.5 text-xs font-medium text-text-primary transition-colors hover:bg-bg-hover"
                     >
                       {beat.is_published ? (
-                        <>
-                          <EyeOff className="h-3 w-3" /> Dépublier
-                        </>
+                        <EyeOff className="h-3 w-3" />
                       ) : (
-                        <>
-                          <Eye className="h-3 w-3" /> Publier
-                        </>
+                        <Eye className="h-3 w-3" />
                       )}
+                      <span>{beat.is_published ? "Dépublier" : "Publier"}</span>
                     </button>
                     <button
                       type="button"
