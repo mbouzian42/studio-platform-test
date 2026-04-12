@@ -1,8 +1,8 @@
 "use server";
 
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import type { ActionResponse } from "@/types";
-import type { Beat, BeatPurchase, LicenseType } from "@/types";
+import type { Database, Beat, BeatPurchase, LicenseType } from "@/types";
 import { createCheckoutSession } from "@/lib/stripe";
 
 export async function getPublishedBeats(): Promise<ActionResponse<Beat[]>> {
@@ -290,12 +290,94 @@ export async function createBeat(input: {
   return { success: true, data };
 }
 
-const AUDIO_EXTENSIONS = [".wav", ".aiff", ".flac"];
+const PREVIEW_SECONDS = 30;
+
+/**
+ * Trim audio file to ~30 seconds for the public preview.
+ * WAV: precise binary slice (header + 30s of PCM data).
+ * MP3/FLAC/AIFF: proportional byte slice (approximate but safe — never exposes full track).
+ */
+async function trimAudioTo30s(file: File, ext: string): Promise<Buffer> {
+  const arrayBuffer = await file.arrayBuffer();
+  const buffer = Buffer.from(arrayBuffer);
+
+  if (ext === ".wav") {
+    // WAV files can have variable-length headers with extra chunks (LIST, JUNK, etc.)
+    // We must walk the RIFF chunks to find the exact start of the 'data' chunk
+    // and read the byte rate from the 'fmt ' chunk.
+
+    let byteRate = 0;
+    let dataChunkOffset = -1;
+    let dataChunkSize = 0;
+
+    // Start after RIFF header (12 bytes: "RIFF", size, "WAVE")
+    let offset = 12;
+    while (offset < buffer.length - 8) {
+      const chunkId = buffer.toString("ascii", offset, offset + 4);
+      const chunkSize = buffer.readUInt32LE(offset + 4);
+
+      if (chunkId === "fmt ") {
+        // fmt chunk data layout: AudioFormat(2), NumChannels(2), SampleRate(4), ByteRate(4)...
+        // ByteRate is at offset+8 (chunk data start) + 8 = offset+16
+        byteRate = buffer.readUInt32LE(offset + 8 + 8);
+      } else if (chunkId === "data") {
+        dataChunkOffset = offset + 8; // audio data starts here
+        dataChunkSize = chunkSize;
+        break;
+      }
+
+      // Move to next chunk (chunk data + padding byte if odd size)
+      offset += 8 + chunkSize + (chunkSize % 2);
+    }
+
+    if (dataChunkOffset === -1 || byteRate === 0) {
+      // Couldn't parse — return full file
+      return buffer;
+    }
+
+    const previewBytes = byteRate * PREVIEW_SECONDS;
+    const trimmedDataSize = Math.min(previewBytes, dataChunkSize);
+    const outputSize = dataChunkOffset + trimmedDataSize;
+
+    const trimmed = Buffer.alloc(outputSize);
+    // Copy everything up to (but not including) the data chunk content
+    buffer.copy(trimmed, 0, 0, dataChunkOffset);
+    // Copy the trimmed audio data
+    buffer.copy(trimmed, dataChunkOffset, dataChunkOffset, dataChunkOffset + trimmedDataSize);
+
+    // Update data chunk size
+    trimmed.writeUInt32LE(trimmedDataSize, dataChunkOffset - 4);
+    // Update RIFF chunk size (total file size - 8)
+    trimmed.writeUInt32LE(outputSize - 8, 4);
+
+    return trimmed;
+  }
+
+  // For compressed formats: estimate duration from bitrate and slice proportionally
+  // This gives an approximate 30s clip from the start of the file
+  const fileSizeBytes = buffer.length;
+  // Assume typical bitrates: MP3 ~192-320kbps, FLAC ~800-1400kbps, AIFF ~1411kbps
+  // We estimate total duration and take the first 30s proportion
+  const estimatedBitrate = ext === ".mp3" ? 256000 : ext === ".flac" ? 1000000 : 1411000; // bits/sec
+  const estimatedByterate = estimatedBitrate / 8;
+  const estimatedDuration = fileSizeBytes / estimatedByterate;
+
+  if (estimatedDuration <= PREVIEW_SECONDS) {
+    // File is shorter than 30s, return as-is
+    return buffer;
+  }
+
+  const ratio = PREVIEW_SECONDS / estimatedDuration;
+  const previewEndByte = Math.ceil(fileSizeBytes * ratio);
+  return Buffer.from(buffer.buffer, buffer.byteOffset, previewEndByte);
+}
+
+const AUDIO_EXTENSIONS = [".wav", ".mp3", ".aiff", ".flac"];
 const IMAGE_EXTENSIONS = [".jpg", ".jpeg", ".png", ".webp"];
 const MAX_AUDIO_SIZE = 200 * 1024 * 1024; // 200MB
 const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10MB
 
-const VALID_AUDIO_MIMES = ["audio/wav", "audio/x-wav", "audio/aiff", "audio/x-aiff", "audio/flac"];
+const VALID_AUDIO_MIMES = ["audio/wav", "audio/x-wav", "audio/mpeg", "audio/mp3", "audio/aiff", "audio/x-aiff", "audio/flac"];
 const VALID_IMAGE_MIMES = ["image/jpeg", "image/png", "image/webp"];
 
 function getExtension(filename: string): string {
@@ -307,6 +389,7 @@ function getExtension(filename: string): string {
 export async function createBeatWithFiles(
   formData: FormData,
 ): Promise<ActionResponse<Beat>> {
+  // Use anon client for auth check
   const supabase = await createClient();
 
   const {
@@ -314,8 +397,11 @@ export async function createBeatWithFiles(
   } = await supabase.auth.getUser();
   if (!user) return { success: false, error: "Non connecté" };
 
+  // Use service role client for DB/storage (bypasses RLS after manual auth check)
+  const serviceClient = createServiceClient();
+
   // Verify user has beatmaker/engineer/admin role
-  const { data: profile } = await supabase
+  const { data: profile } = await serviceClient
     .from("profiles")
     .select("role")
     .eq("id", user.id)
@@ -379,7 +465,7 @@ export async function createBeatWithFiles(
   const slug = slugify(metadata.title) + "-" + Date.now().toString(36);
 
   // Step 1: Insert beat record
-  const { data: beat, error: insertError } = await supabase
+  const { data: beat, error: insertError } = await serviceClient
     .from("beats")
     .insert({
       beatmaker_id: user.id,
@@ -406,35 +492,39 @@ export async function createBeatWithFiles(
   try {
     // Step 2: Upload cover image to beat-previews
     const coverPath = `${basePath}/cover${coverExt}`;
-    const { error: coverErr } = await supabase.storage
+    const { error: coverErr } = await serviceClient.storage
       .from("beat-previews")
       .upload(coverPath, coverFile, { upsert: true });
     if (coverErr) throw new Error(`Cover upload: ${coverErr.message}`);
 
     // Step 3: Upload full audio to beat-files (private)
     const audioPath = `${basePath}/audio${audioExt}`;
-    const { error: audioErr } = await supabase.storage
+    const { error: audioErr } = await serviceClient.storage
       .from("beat-files")
       .upload(audioPath, audioFile, { upsert: true });
     if (audioErr) throw new Error(`Audio upload: ${audioErr.message}`);
 
-    // Step 4: Upload same audio to beat-previews (public preview)
+    // Step 4: Generate 30s preview and upload to beat-previews (public)
+    const previewBuffer = await trimAudioTo30s(audioFile, audioExt);
     const previewPath = `${basePath}/preview${audioExt}`;
-    const { error: previewErr } = await supabase.storage
+    const { error: previewErr } = await serviceClient.storage
       .from("beat-previews")
-      .upload(previewPath, audioFile, { upsert: true });
+      .upload(previewPath, previewBuffer, {
+        upsert: true,
+        contentType: audioFile.type,
+      });
     if (previewErr) throw new Error(`Preview upload: ${previewErr.message}`);
 
     // Step 5: Get public URLs
-    const { data: coverUrl } = supabase.storage
+    const { data: coverUrl } = serviceClient.storage
       .from("beat-previews")
       .getPublicUrl(coverPath);
-    const { data: previewUrl } = supabase.storage
+    const { data: previewUrl } = serviceClient.storage
       .from("beat-previews")
       .getPublicUrl(previewPath);
 
     // Step 6: Update beat record with URLs
-    const { data: updatedBeat, error: updateErr } = await supabase
+    const { data: updatedBeat, error: updateErr } = await serviceClient
       .from("beats")
       .update({
         cover_image_url: coverUrl.publicUrl,
@@ -453,12 +543,14 @@ export async function createBeatWithFiles(
   } catch (err) {
     // Cleanup on failure: delete beat record and any uploaded files
     try {
-      await supabase.from("beats").delete().eq("id", beat.id);
-      await supabase.storage.from("beat-previews").remove([
+      await serviceClient.from("beats").delete().eq("id", beat.id);
+      await serviceClient.storage.from("beat-previews").remove([
         `${basePath}/cover${coverExt}`,
         `${basePath}/preview${audioExt}`,
       ]);
-      await supabase.storage.from("beat-files").remove([`${basePath}/audio${audioExt}`]);
+      await serviceClient.storage.from("beat-files").remove([
+        `${basePath}/audio${audioExt}`,
+      ]);
     } catch (cleanupErr) {
       console.error("[createBeatWithFiles] Cleanup failed for beat", beat.id, cleanupErr);
     }
@@ -487,7 +579,7 @@ export async function updateBeat(
   } = await supabase.auth.getUser();
   if (!user) return { success: false, error: "Non connecté" };
 
-  const updateData: Record<string, unknown> = {};
+  const updateData: Database["public"]["Tables"]["beats"]["Update"] = {};
   if (input.title !== undefined) updateData.title = input.title.trim();
   if (input.bpm !== undefined) updateData.bpm = input.bpm;
   if (input.key !== undefined) updateData.key = input.key;
@@ -619,4 +711,76 @@ export async function getBeatmakerSales(): Promise<ActionResponse<BeatmakerSales
   }));
 
   return { success: true, data: { totalSold, totalRevenue, salesByBeat, recentSales } };
+}
+
+// ── Favorites ──
+
+export async function addBeatToFavorites(
+  beatId: string,
+): Promise<ActionResponse> {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { success: false, error: "Connexion requise" };
+
+  const { error } = await supabase
+    .from("beat_favorites")
+    .insert({ user_id: user.id, beat_id: beatId });
+
+  if (error) {
+    // Unique constraint violation = already favorited, treat as success
+    if (error.code === "23505") return { success: true, data: undefined };
+    return { success: false, error: error.message };
+  }
+  return { success: true, data: undefined };
+}
+
+export async function removeBeatFromFavorites(
+  beatId: string,
+): Promise<ActionResponse> {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { success: false, error: "Connexion requise" };
+
+  const { error } = await supabase
+    .from("beat_favorites")
+    .delete()
+    .eq("user_id", user.id)
+    .eq("beat_id", beatId);
+
+  if (error) return { success: false, error: error.message };
+  return { success: true, data: undefined };
+}
+
+export async function getMyFavorites(): Promise<ActionResponse<Beat[]>> {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { success: false, error: "Connexion requise" };
+
+  const { data: favorites, error } = await supabase
+    .from("beat_favorites")
+    .select("beat_id")
+    .eq("user_id", user.id)
+    .order("created_at", { ascending: false });
+
+  if (error) return { success: false, error: error.message };
+  if (!favorites || favorites.length === 0) return { success: true, data: [] };
+
+  const beatIds = favorites.map((f) => f.beat_id);
+  const { data: beats, error: beatsError } = await supabase
+    .from("beats")
+    .select("*")
+    .in("id", beatIds)
+    .returns<Beat[]>();
+
+  if (beatsError) return { success: false, error: beatsError.message };
+  return { success: true, data: beats ?? [] };
 }

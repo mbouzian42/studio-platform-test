@@ -86,12 +86,53 @@ export async function adminDeleteBeat(beatId: string): Promise<ActionResponse> {
   const { supabase, isAdmin } = await verifyAdmin();
   if (!isAdmin) return { success: false, error: "Accès refusé" };
 
-  // Unpublish instead of hard delete (preserves purchase history)
-  const { error } = await supabase
+  // Get beat info for storage cleanup
+  const { data: beat } = await supabase
     .from("beats")
-    .update({ is_published: false })
-    .eq("id", beatId);
+    .select("beatmaker_id, audio_full_url, audio_preview_url, cover_image_url")
+    .eq("id", beatId)
+    .single<{
+      beatmaker_id: string;
+      audio_full_url: string | null;
+      audio_preview_url: string | null;
+      cover_image_url: string | null;
+    }>();
 
+  // Delete favorites referencing this beat
+  await supabase.from("beat_favorites").delete().eq("beat_id", beatId);
+
+  // Delete purchases referencing this beat
+  await supabase.from("beat_purchases").delete().eq("beat_id", beatId);
+
+  // Hard delete the beat record
+  const { error } = await supabase.from("beats").delete().eq("id", beatId);
   if (error) return { success: false, error: error.message };
+
+  // Clean up storage files
+  if (beat) {
+    const basePath = `${beat.beatmaker_id}/${beatId}`;
+    try {
+      const { data: previewFiles } = await supabase.storage
+        .from("beat-previews")
+        .list(basePath);
+      if (previewFiles && previewFiles.length > 0) {
+        await supabase.storage
+          .from("beat-previews")
+          .remove(previewFiles.map((f) => `${basePath}/${f.name}`));
+      }
+
+      const { data: fullFiles } = await supabase.storage
+        .from("beat-files")
+        .list(basePath);
+      if (fullFiles && fullFiles.length > 0) {
+        await supabase.storage
+          .from("beat-files")
+          .remove(fullFiles.map((f) => `${basePath}/${f.name}`));
+      }
+    } catch {
+      // Storage cleanup is best-effort
+    }
+  }
+
   return { success: true, data: undefined };
 }
