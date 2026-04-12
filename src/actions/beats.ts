@@ -290,12 +290,12 @@ export async function createBeat(input: {
   return { success: true, data };
 }
 
-const AUDIO_EXTENSIONS = [".wav", ".aiff", ".flac"];
+const AUDIO_EXTENSIONS = [".wav", ".mp3", ".aiff", ".flac"];
 const IMAGE_EXTENSIONS = [".jpg", ".jpeg", ".png", ".webp"];
 const MAX_AUDIO_SIZE = 200 * 1024 * 1024; // 200MB
 const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10MB
 
-const VALID_AUDIO_MIMES = ["audio/wav", "audio/x-wav", "audio/aiff", "audio/x-aiff", "audio/flac"];
+const VALID_AUDIO_MIMES = ["audio/wav", "audio/x-wav", "audio/aiff", "audio/x-aiff", "audio/flac", "audio/mpeg", "audio/mp3"];
 const VALID_IMAGE_MIMES = ["image/jpeg", "image/png", "image/webp"];
 
 function getExtension(filename: string): string {
@@ -307,163 +307,166 @@ function getExtension(filename: string): string {
 export async function createBeatWithFiles(
   formData: FormData,
 ): Promise<ActionResponse<Beat>> {
-  const supabase = await createClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { success: false, error: "Non connecté" };
-
-  // Verify user has beatmaker/engineer/admin role
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .single<{ role: string }>();
-
-  if (!profile || !["beatmaker", "engineer", "admin"].includes(profile.role)) {
-    return { success: false, error: "Rôle non autorisé pour uploader des beats" };
-  }
-
-  // Extract files and metadata
-  const audioFile = formData.get("audio") as File | null;
-  const coverFile = formData.get("cover") as File | null;
-  const metadataRaw = formData.get("metadata") as string | null;
-
-  if (!audioFile || !coverFile || !metadataRaw) {
-    return { success: false, error: "Fichiers audio, image et métadonnées requis" };
-  }
-
-  // Validate files (extension + MIME type)
-  const audioExt = getExtension(audioFile.name);
-  if (!audioExt || !AUDIO_EXTENSIONS.includes(audioExt)) {
-    return { success: false, error: `Format audio non supporté : ${audioExt || "inconnu"}` };
-  }
-  if (!VALID_AUDIO_MIMES.includes(audioFile.type)) {
-    return { success: false, error: `Type MIME audio non supporté : ${audioFile.type}` };
-  }
-  if (audioFile.size > MAX_AUDIO_SIZE) {
-    return { success: false, error: "Fichier audio trop volumineux (max 200 Mo)" };
-  }
-
-  const coverExt = getExtension(coverFile.name);
-  if (!coverExt || !IMAGE_EXTENSIONS.includes(coverExt)) {
-    return { success: false, error: `Format image non supporté : ${coverExt || "inconnu"}` };
-  }
-  if (!VALID_IMAGE_MIMES.includes(coverFile.type)) {
-    return { success: false, error: `Type MIME image non supporté : ${coverFile.type}` };
-  }
-  if (coverFile.size > MAX_IMAGE_SIZE) {
-    return { success: false, error: "Image trop volumineuse (max 10 Mo)" };
-  }
-
-  // Parse & validate metadata
-  let metadata: {
-    title: string;
-    bpm: number;
-    key: string;
-    genre: string;
-    tags: string[];
-    priceSimple: number;
-    priceExclusive: number | null;
-  };
   try {
-    metadata = JSON.parse(metadataRaw);
-  } catch {
-    return { success: false, error: "Métadonnées invalides" };
-  }
+    console.log("[upload] 1. starting");
+    const supabase = await createClient();
 
-  if (!metadata.title?.trim()) return { success: false, error: "Le titre est requis" };
-  if (metadata.priceSimple < 1) return { success: false, error: "Le prix simple doit être positif" };
+    const { data: { user } } = await supabase.auth.getUser();
+    console.log("[upload] 2. user:", user?.id ?? "NO USER");
+    if (!user) return { success: false, error: "Non connecté" };
 
-  const slug = slugify(metadata.title) + "-" + Date.now().toString(36);
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .single<{ role: string }>();
+    console.log("[upload] 3. profile role:", profile?.role ?? "NO PROFILE");
 
-  // Step 1: Insert beat record
-  const { data: beat, error: insertError } = await supabase
-    .from("beats")
-    .insert({
-      beatmaker_id: user.id,
-      title: metadata.title.trim(),
-      slug,
-      bpm: metadata.bpm,
-      key: metadata.key,
-      genre: metadata.genre,
-      tags: metadata.tags,
-      price_simple: metadata.priceSimple,
-      price_exclusive: metadata.priceExclusive,
-      is_published: false,
-      is_exclusive_sold: false,
-    })
-    .select()
-    .single<Beat>();
+    if (!profile || !["beatmaker", "engineer", "admin"].includes(profile.role)) {
+      return { success: false, error: "Rôle non autorisé pour uploader des beats" };
+    }
 
-  if (insertError || !beat) {
-    return { success: false, error: insertError?.message ?? "Erreur création beat" };
-  }
+    const audioFile = formData.get("audio") as File | null;
+    const coverFile = formData.get("cover") as File | null;
+    const metadataRaw = formData.get("metadata") as string | null;
+    console.log("[upload] 4. files:", audioFile?.name, audioFile?.type, audioFile?.size, "|", coverFile?.name);
 
-  const basePath = `${user.id}/${beat.id}`;
+    if (!audioFile || !coverFile || !metadataRaw) {
+      return { success: false, error: "Fichiers audio, image et métadonnées requis" };
+    }
 
-  try {
-    // Step 2: Upload cover image to beat-previews
+    const audioExt = getExtension(audioFile.name);
+    console.log("[upload] 5. audioExt:", audioExt, "mime:", audioFile.type);
+    if (!audioExt || !AUDIO_EXTENSIONS.includes(audioExt)) {
+      return { success: false, error: `Format audio non supporté : ${audioExt || "inconnu"}` };
+    }
+    if (!VALID_AUDIO_MIMES.includes(audioFile.type)) {
+      return { success: false, error: `Type MIME audio non supporté : ${audioFile.type}` };
+    }
+    if (audioFile.size > MAX_AUDIO_SIZE) {
+      return { success: false, error: "Fichier audio trop volumineux (max 200 Mo)" };
+    }
+
+    const coverExt = getExtension(coverFile.name);
+    console.log("[upload] 6. coverExt:", coverExt, "mime:", coverFile.type);
+    if (!coverExt || !IMAGE_EXTENSIONS.includes(coverExt)) {
+      return { success: false, error: `Format image non supporté : ${coverExt || "inconnu"}` };
+    }
+    if (!VALID_IMAGE_MIMES.includes(coverFile.type)) {
+      return { success: false, error: `Type MIME image non supporté : ${coverFile.type}` };
+    }
+    if (coverFile.size > MAX_IMAGE_SIZE) {
+      return { success: false, error: "Image trop volumineuse (max 10 Mo)" };
+    }
+
+    let metadata: {
+      title: string; bpm: number; key: string; genre: string;
+      tags: string[]; priceSimple: number; priceExclusive: number | null; isPublished: boolean;
+    };
+    try {
+      metadata = JSON.parse(metadataRaw);
+    } catch {
+      return { success: false, error: "Métadonnées invalides" };
+    }
+    console.log("[upload] 7. metadata:", metadata);
+
+    if (!metadata.title?.trim()) return { success: false, error: "Le titre est requis" };
+    if (metadata.priceSimple < 1) return { success: false, error: "Le prix simple doit être positif" };
+
+    const slug = slugify(metadata.title) + "-" + Date.now().toString(36);
+
+    console.log("[upload] 8. inserting beat row...");
+    const { data: beat, error: insertError } = await supabase
+      .from("beats")
+      .insert({
+        beatmaker_id: user.id,
+        title: metadata.title.trim(),
+        slug,
+        bpm: metadata.bpm,
+        key: metadata.key,
+        genre: metadata.genre,
+        tags: metadata.tags,
+        price_simple: metadata.priceSimple,
+        price_exclusive: metadata.priceExclusive,
+        is_published: metadata.isPublished ?? false,
+        is_exclusive_sold: false,
+      })
+      .select()
+      .single<Beat>();
+
+    console.log("[upload] 9. insert result — beat:", beat?.id ?? "NULL", "error:", insertError?.message ?? "none");
+
+    if (insertError || !beat) {
+      return { success: false, error: insertError?.message ?? "Erreur création beat" };
+    }
+
+    console.log("[upload] 10. uploading cover...");
+    const basePath = `${user.id}/${beat.id}`;
     const coverPath = `${basePath}/cover${coverExt}`;
     const { error: coverErr } = await supabase.storage
       .from("beat-previews")
       .upload(coverPath, coverFile, { upsert: true });
-    if (coverErr) throw new Error(`Cover upload: ${coverErr.message}`);
+    console.log("[upload] 11. cover upload:", coverErr?.message ?? "OK");
 
-    // Step 3: Upload full audio to beat-files (private)
+    if (coverErr) {
+      await supabase.from("beats").delete().eq("id", beat.id);
+      return { success: false, error: `Cover upload: ${coverErr.message}` };
+    }
+
+    console.log("[upload] 12. uploading full audio...");
     const audioPath = `${basePath}/audio${audioExt}`;
     const { error: audioErr } = await supabase.storage
       .from("beat-files")
       .upload(audioPath, audioFile, { upsert: true });
-    if (audioErr) throw new Error(`Audio upload: ${audioErr.message}`);
+    console.log("[upload] 13. audio upload:", audioErr?.message ?? "OK");
 
-    // Step 4: Upload same audio to beat-previews (public preview)
+    if (audioErr) {
+      await supabase.from("beats").delete().eq("id", beat.id);
+      await supabase.storage.from("beat-previews").remove([coverPath]);
+      return { success: false, error: `Audio upload: ${audioErr.message}` };
+    }
+
+    console.log("[upload] 14. uploading preview...");
     const previewPath = `${basePath}/preview${audioExt}`;
     const { error: previewErr } = await supabase.storage
       .from("beat-previews")
       .upload(previewPath, audioFile, { upsert: true });
-    if (previewErr) throw new Error(`Preview upload: ${previewErr.message}`);
+    console.log("[upload] 15. preview upload:", previewErr?.message ?? "OK");
 
-    // Step 5: Get public URLs
-    const { data: coverUrl } = supabase.storage
-      .from("beat-previews")
-      .getPublicUrl(coverPath);
-    const { data: previewUrl } = supabase.storage
-      .from("beat-previews")
-      .getPublicUrl(previewPath);
+    if (previewErr) {
+      await supabase.from("beats").delete().eq("id", beat.id);
+      await supabase.storage.from("beat-previews").remove([coverPath]);
+      await supabase.storage.from("beat-files").remove([audioPath]);
+      return { success: false, error: `Preview upload: ${previewErr.message}` };
+    }
 
-    // Step 6: Update beat record with URLs
+    const { data: coverUrl } = supabase.storage.from("beat-previews").getPublicUrl(coverPath);
+    const { data: previewUrl } = supabase.storage.from("beat-previews").getPublicUrl(previewPath);
+
+    console.log("[upload] 16. updating beat with URLs...");
     const { data: updatedBeat, error: updateErr } = await supabase
       .from("beats")
       .update({
         cover_image_url: coverUrl.publicUrl,
         audio_preview_url: previewUrl.publicUrl,
-        audio_full_url: audioPath, // Store path for signed URL generation
+        audio_full_url: audioPath,
       })
       .eq("id", beat.id)
       .select()
       .single<Beat>();
 
+    console.log("[upload] 17. update result:", updatedBeat?.id ?? "NULL", updateErr?.message ?? "OK");
+
     if (updateErr || !updatedBeat) {
-      throw new Error(updateErr?.message ?? "Erreur mise à jour beat");
+      return { success: false, error: updateErr?.message ?? "Erreur mise à jour beat" };
     }
 
+    console.log("[upload] 18. DONE");
     return { success: true, data: updatedBeat };
-  } catch (err) {
-    // Cleanup on failure: delete beat record and any uploaded files
-    try {
-      await supabase.from("beats").delete().eq("id", beat.id);
-      await supabase.storage.from("beat-previews").remove([
-        `${basePath}/cover${coverExt}`,
-        `${basePath}/preview${audioExt}`,
-      ]);
-      await supabase.storage.from("beat-files").remove([`${basePath}/audio${audioExt}`]);
-    } catch (cleanupErr) {
-      console.error("[createBeatWithFiles] Cleanup failed for beat", beat.id, cleanupErr);
-    }
 
-    const message = err instanceof Error ? err.message : "Erreur upload";
+  } catch (err) {
+    console.error("[upload] CAUGHT ERROR:", err);
+    const message = err instanceof Error ? err.message : "Erreur inattendue";
     return { success: false, error: message };
   }
 }

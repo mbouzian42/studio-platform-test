@@ -2,6 +2,8 @@
 
 import { useState, useCallback } from "react";
 import type { Beat } from "@/types";
+import { AudioPlayer } from "./audio-player";
+import { useAudioStore } from "@/stores/audio-store";
 
 interface BeatSwipeCardProps {
   beat: Beat;
@@ -27,6 +29,11 @@ export function BeatSwipeCard({
   const [isDragging, setIsDragging] = useState(false);
   const [startX, setStartX] = useState(0);
 
+  const { currentBeatId, currentTime, duration } = useAudioStore();
+  const isActive = currentBeatId === beat.id;
+  const progress =
+    isActive && duration > 0 ? (currentTime / duration) * 100 : 0;
+
   const SWIPE_THRESHOLD = 100;
 
   const handlePointerDown = useCallback(
@@ -50,7 +57,6 @@ export function BeatSwipeCard({
   const handlePointerUp = useCallback(() => {
     if (!isDragging) return;
     setIsDragging(false);
-
     if (dragX > SWIPE_THRESHOLD) {
       onSwipeRight();
     } else if (dragX < -SWIPE_THRESHOLD) {
@@ -59,7 +65,6 @@ export function BeatSwipeCard({
     setDragX(0);
   }, [isDragging, dragX, onSwipeLeft, onSwipeRight]);
 
-  // Compute transform
   let translateX = dragX;
   let rotation = isDragging ? dragX * 0.05 : 0;
   let cardOpacity = 1;
@@ -92,7 +97,6 @@ export function BeatSwipeCard({
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
     >
-      {/* Beat card — matches prototype */}
       <div
         className="relative h-full w-full overflow-hidden rounded-2xl"
         style={{
@@ -102,7 +106,7 @@ export function BeatSwipeCard({
               : "none",
         }}
       >
-        {/* Dark gradient background */}
+        {/* Background */}
         <div
           className="absolute inset-0"
           style={{
@@ -111,20 +115,29 @@ export function BeatSwipeCard({
           }}
         />
 
-        {/* Content */}
+        {/* Cover image if available */}
+        {beat.cover_image_url && (
+          <img
+            src={beat.cover_image_url}
+            alt={beat.title}
+            className="absolute inset-0 h-full w-full object-cover opacity-30"
+          />
+        )}
+
         <div className="relative z-[1] flex h-full flex-col justify-end p-6">
           {/* Waveform */}
           <div className="flex flex-1 items-center justify-center gap-[3px] py-8">
             {WAVEFORM_BARS.map((h, i) => (
               <div
                 key={i}
-                className="w-[3px] rounded-sm"
+                className="w-0.75 rounded-sm"
                 style={{
                   height: h,
                   background: "var(--color-brand-gradient)",
-                  opacity: 0.6,
-                  animation: `waveAnimate 1.2s ease-in-out infinite`,
-                  animationDelay: `${i * 0.05}s`,
+                  opacity: isActive ? 0.9 : 0.4,
+                  animation: isActive
+                    ? `waveAnimate 1.2s ease-in-out infinite`
+                    : "none",
                 }}
               />
             ))}
@@ -150,16 +163,31 @@ export function BeatSwipeCard({
               {beat.genre && <span className="pill">{beat.genre}</span>}
             </div>
           </div>
+
+          {/* Audio player (compact — play/pause only) */}
+          <div
+            className="mt-4 flex justify-center"
+            onPointerDown={(e) => e.stopPropagation()}
+          >
+            <AudioPlayer
+              beatId={beat.id}
+              previewUrl={beat.audio_preview_url}
+              compact
+            />
+          </div>
         </div>
 
-        {/* Progress bar */}
+        {/* Real progress bar */}
         <div
           className="absolute bottom-0 left-0 right-0"
           style={{ height: 3, background: "rgba(255,255,255,0.1)" }}
         >
           <div
-            className="h-full rounded-sm"
-            style={{ width: "65%", background: "var(--color-brand-gradient)" }}
+            className="h-full rounded-sm transition-[width] duration-100"
+            style={{
+              width: `${progress}%`,
+              background: "var(--color-brand-gradient)",
+            }}
           />
         </div>
       </div>

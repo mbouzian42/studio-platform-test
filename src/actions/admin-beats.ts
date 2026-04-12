@@ -39,10 +39,10 @@ export async function getAdminBeats(): Promise<ActionResponse<AdminBeat[]>> {
   const beatIds = (beats ?? []).map((b) => b.id);
   const { data: purchases } = beatIds.length > 0
     ? await supabase
-        .from("beat_purchases")
-        .select("beat_id")
-        .in("beat_id", beatIds)
-        .returns<{ beat_id: string }[]>()
+      .from("beat_purchases")
+      .select("beat_id")
+      .in("beat_id", beatIds)
+      .returns<{ beat_id: string }[]>()
     : { data: [] as { beat_id: string }[] };
 
   const salesMap = new Map<string, number>();
@@ -86,12 +86,12 @@ export async function adminDeleteBeat(beatId: string): Promise<ActionResponse> {
   const { supabase, isAdmin } = await verifyAdmin();
   if (!isAdmin) return { success: false, error: "Accès refusé" };
 
-  // Unpublish instead of hard delete (preserves purchase history)
-  const { error } = await supabase
-    .from("beats")
-    .update({ is_published: false })
-    .eq("id", beatId);
+  // Remove favorites first (may not have cascade)
+  await supabase.from("beat_favorites").delete().eq("beat_id", beatId);
+  // Remove purchases first (may not have cascade)
+  await supabase.from("beat_purchases").delete().eq("beat_id", beatId);
 
+  const { error } = await supabase.from("beats").delete().eq("id", beatId);
   if (error) return { success: false, error: error.message };
   return { success: true, data: undefined };
 }

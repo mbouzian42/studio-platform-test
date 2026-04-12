@@ -40,7 +40,7 @@ export async function signup(formData: FormData) {
     email,
     password,
     options: {
-      emailRedirectTo: `${origin}/auth/callback`,
+      emailRedirectTo: `${origin}`,
       data: {
         full_name: `${firstName} ${lastName}`.trim(),
         artist_name: artistName,
@@ -69,7 +69,7 @@ export async function forgotPassword(formData: FormData) {
   const email = formData.get("email") as string;
 
   const { error } = await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: `${origin}/auth/callback?next=/account`,
+    redirectTo: `${origin}/account`,
   });
 
   if (error) {
@@ -90,8 +90,8 @@ export async function signInWithOAuth(
   const origin = headersList.get("origin") ?? "";
 
   const callbackUrl = redirectTo
-    ? `${origin}/auth/callback?next=${encodeURIComponent(redirectTo)}`
-    : `${origin}/auth/callback`;
+    ? `${origin}${redirectTo}`
+    : `${origin}`;
 
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider,
