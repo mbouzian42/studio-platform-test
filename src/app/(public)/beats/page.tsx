@@ -3,10 +3,12 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Music } from "lucide-react";
-import { getPublishedBeats } from "@/actions/beats";
+import { getPublishedBeats, addBeatToFavorites } from "@/actions/beats";
 import { BeatSwipeCard } from "@/components/beats/beat-swipe-card";
 import { BeatsOnboarding } from "@/components/beats/beats-onboarding";
 import { MOCK_BEATS } from "@/lib/mock-beats";
+import { useAudioStore } from "@/stores/audio-store";
+import { toast } from "@/components/ui/toaster";
 import type { Beat } from "@/types";
 
 export default function BeatsPage() {
@@ -17,11 +19,16 @@ export default function BeatsPage() {
   const animatingRef = useRef(false);
   const [loading, setLoading] = useState(true);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const hasInteracted = useRef(false);
+  const { play, stop } = useAudioStore();
 
   useEffect(() => {
     // Check localStorage after mount (avoids SSR/hydration mismatch)
     if (!localStorage.getItem("studio_beats_onboarded")) {
       setShowOnboarding(true);
+    } else {
+      // User already completed onboarding in a previous session
+      hasInteracted.current = true;
     }
 
     async function load() {
@@ -36,27 +43,50 @@ export default function BeatsPage() {
     load();
   }, []);
 
+  // Autoplay when the active beat changes (after user has interacted with the page)
+  useEffect(() => {
+    if (!hasInteracted.current || beats.length === 0 || currentIndex >= beats.length) return;
+    const beat = beats[currentIndex];
+    if (beat.audio_preview_url) {
+      play(beat.id, beat.audio_preview_url);
+    }
+  }, [currentIndex, beats, play]);
+
   const handleOnboardingComplete = useCallback(() => {
     localStorage.setItem("studio_beats_onboarded", "true");
+    hasInteracted.current = true;
     setShowOnboarding(false);
-  }, []);
+    // Autoplay the first beat after onboarding
+    if (beats.length > 0 && beats[currentIndex]?.audio_preview_url) {
+      play(beats[currentIndex].id, beats[currentIndex].audio_preview_url!);
+    }
+  }, [beats, currentIndex, play]);
 
   const animateAndAdvance = useCallback(
     (direction: "left" | "right") => {
       if (animatingRef.current) return;
+      hasInteracted.current = true;
       animatingRef.current = true;
+      // Stop current audio — autoplay effect will start the next beat
+      stop();
       setExitDirection(direction);
 
+      // Add to favorites on swipe right
+      if (direction === "right" && beats[currentIndex]) {
+        addBeatToFavorites(beats[currentIndex].id).then((result) => {
+          if (result.success) {
+            toast({ title: "Ajouté aux favoris", variant: "success" });
+          }
+        });
+      }
+
       setTimeout(() => {
-        if (direction === "right" && beats[currentIndex]) {
-          router.push(`/beats/${beats[currentIndex].slug}`);
-        }
         setCurrentIndex((i) => i + 1);
         setExitDirection(null);
         animatingRef.current = false;
       }, 400);
     },
-    [beats, currentIndex, router],
+    [stop, beats, currentIndex],
   );
 
   const handleSwipeLeft = useCallback(() => {
