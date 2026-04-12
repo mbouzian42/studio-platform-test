@@ -10,6 +10,8 @@ interface AudioPlayerProps {
   compact?: boolean;
 }
 
+const PREVIEW_DURATION = 30; // seconds — cap playback to 30s preview
+
 export function AudioPlayer({ beatId, previewUrl, compact }: AudioPlayerProps) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const {
@@ -60,13 +62,21 @@ export function AudioPlayer({ beatId, previewUrl, compact }: AudioPlayerProps) {
 
   const handleTimeUpdate = useCallback(() => {
     if (audioRef.current && isActive) {
+      // Cap playback at 30 seconds
+      if (audioRef.current.currentTime >= PREVIEW_DURATION) {
+        audioRef.current.pause();
+        audioRef.current.currentTime = 0;
+        pause();
+        return;
+      }
       setCurrentTime(audioRef.current.currentTime);
     }
-  }, [isActive, setCurrentTime]);
+  }, [isActive, setCurrentTime, pause]);
 
   const handleLoadedMetadata = useCallback(() => {
     if (audioRef.current && isActive) {
-      setDuration(audioRef.current.duration);
+      // Show 30s as max duration regardless of actual file length
+      setDuration(Math.min(audioRef.current.duration, PREVIEW_DURATION));
     }
   }, [isActive, setDuration]);
 
@@ -75,12 +85,14 @@ export function AudioPlayer({ beatId, previewUrl, compact }: AudioPlayerProps) {
       if (!audioRef.current || !isActive) return;
       const rect = e.currentTarget.getBoundingClientRect();
       const ratio = (e.clientX - rect.left) / rect.width;
-      audioRef.current.currentTime = ratio * audioRef.current.duration;
+      const cappedDuration = Math.min(audioRef.current.duration, PREVIEW_DURATION);
+      audioRef.current.currentTime = ratio * cappedDuration;
     },
     [isActive],
   );
 
-  const progress = isActive && duration > 0 ? (currentTime / duration) * 100 : 0;
+  const cappedDuration = isActive && duration > 0 ? Math.min(duration, PREVIEW_DURATION) : 0;
+  const progress = cappedDuration > 0 ? (currentTime / cappedDuration) * 100 : 0;
   const formatTime = (s: number) => {
     const m = Math.floor(s / 60);
     const sec = Math.floor(s % 60);
@@ -132,7 +144,7 @@ export function AudioPlayer({ beatId, previewUrl, compact }: AudioPlayerProps) {
             {/* Time */}
             <span className="flex-shrink-0 font-mono text-xs text-text-muted">
               {isActive ? formatTime(currentTime) : "0:00"} /{" "}
-              {isActive && duration > 0 ? formatTime(duration) : "0:30"}
+              {isActive && cappedDuration > 0 ? formatTime(cappedDuration) : "0:30"}
             </span>
           </>
         )}
