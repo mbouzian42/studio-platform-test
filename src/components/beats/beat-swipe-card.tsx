@@ -1,6 +1,8 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
+import { Play, Pause, Heart } from "lucide-react";
+import { useAudioStore } from "@/stores/audio-store";
 import type { Beat } from "@/types";
 
 interface BeatSwipeCardProps {
@@ -9,6 +11,8 @@ interface BeatSwipeCardProps {
   onSwipeRight: () => void;
   isTop: boolean;
   exitDirection?: "left" | "right" | null;
+  autoPlay?: boolean;
+  isFavorited?: boolean;
 }
 
 const WAVEFORM_BARS = [
@@ -22,12 +26,89 @@ export function BeatSwipeCard({
   onSwipeRight,
   isTop,
   exitDirection,
+  autoPlay = false,
+  isFavorited = false,
 }: BeatSwipeCardProps) {
   const [dragX, setDragX] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
   const [startX, setStartX] = useState(0);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  const {
+    currentBeatId,
+    isPlaying,
+    currentTime,
+    duration,
+    play,
+    pause,
+    resume,
+    setCurrentTime,
+    setDuration,
+  } = useAudioStore();
+
+  const isActive = currentBeatId === beat.id;
+  const progress = isActive && duration > 0 ? (currentTime / duration) * 100 : 0;
 
   const SWIPE_THRESHOLD = 100;
+
+  useEffect(() => {
+    if (!audioRef.current || !beat.audio_preview_url) return;
+    const audio = audioRef.current;
+
+    if (isActive && isPlaying) {
+      audio.play().catch(() => {});
+    } else {
+      audio.pause();
+    }
+  }, [isActive, isPlaying, beat.audio_preview_url]);
+
+  useEffect(() => {
+    if (isTop && autoPlay && beat.audio_preview_url && !isActive) {
+      play(beat.id, beat.audio_preview_url);
+    }
+  }, [isTop, autoPlay, beat.id, beat.audio_preview_url, isActive, play]);
+
+  useEffect(() => {
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause();
+      }
+    };
+  }, []);
+
+  const handleTimeUpdate = useCallback(() => {
+    if (audioRef.current && isActive) {
+      setCurrentTime(audioRef.current.currentTime);
+    }
+  }, [isActive, setCurrentTime]);
+
+  const handleLoadedMetadata = useCallback(() => {
+    if (audioRef.current && isActive) {
+      setDuration(audioRef.current.duration);
+    }
+  }, [isActive, setDuration]);
+
+  const handlePlayPause = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      if (!beat.audio_preview_url) return;
+
+      if (isActive && isPlaying) {
+        pause();
+      } else if (isActive) {
+        resume();
+      } else {
+        play(beat.id, beat.audio_preview_url);
+      }
+    },
+    [isActive, isPlaying, beat.id, beat.audio_preview_url, play, pause, resume],
+  );
+
+  const formatTime = (s: number) => {
+    const m = Math.floor(s / 60);
+    const sec = Math.floor(s % 60);
+    return `${m}:${String(sec).padStart(2, "0")}`;
+  };
 
   const handlePointerDown = useCallback(
     (e: React.PointerEvent) => {
@@ -92,7 +173,17 @@ export function BeatSwipeCard({
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
     >
-      {/* Beat card — matches prototype */}
+      {beat.audio_preview_url && (
+        <audio
+          ref={audioRef}
+          src={isActive ? beat.audio_preview_url : undefined}
+          preload="none"
+          onTimeUpdate={handleTimeUpdate}
+          onLoadedMetadata={handleLoadedMetadata}
+          onEnded={() => pause()}
+        />
+      )}
+
       <div
         className="relative h-full w-full overflow-hidden rounded-2xl"
         style={{
@@ -102,7 +193,6 @@ export function BeatSwipeCard({
               : "none",
         }}
       >
-        {/* Dark gradient background */}
         <div
           className="absolute inset-0"
           style={{
@@ -111,9 +201,7 @@ export function BeatSwipeCard({
           }}
         />
 
-        {/* Content */}
         <div className="relative z-[1] flex h-full flex-col justify-end p-6">
-          {/* Waveform */}
           <div className="flex flex-1 items-center justify-center gap-[3px] py-8">
             {WAVEFORM_BARS.map((h, i) => (
               <div
@@ -122,22 +210,46 @@ export function BeatSwipeCard({
                 style={{
                   height: h,
                   background: "var(--color-brand-gradient)",
-                  opacity: 0.6,
-                  animation: `waveAnimate 1.2s ease-in-out infinite`,
+                  opacity: isActive && isPlaying ? 0.9 : 0.6,
+                  animation: isActive && isPlaying
+                    ? `waveAnimate 1.2s ease-in-out infinite`
+                    : "none",
                   animationDelay: `${i * 0.05}s`,
                 }}
               />
             ))}
           </div>
 
-          {/* Beat info */}
-          <div className="text-center">
-            <h3
-              className="font-display font-bold text-white"
-              style={{ fontSize: 22, marginBottom: 4 }}
+          <div className="mb-4 flex items-center justify-center gap-3">
+            <button
+              type="button"
+              onClick={handlePlayPause}
+              disabled={!beat.audio_preview_url}
+              className="flex h-12 w-12 items-center justify-center rounded-full bg-white/20 backdrop-blur-sm transition-all hover:bg-white/30 disabled:opacity-30"
             >
-              {beat.title}
-            </h3>
+              {isActive && isPlaying ? (
+                <Pause className="h-5 w-5 text-white" />
+              ) : (
+                <Play className="ml-0.5 h-5 w-5 text-white" />
+              )}
+            </button>
+            <span className="font-mono text-xs text-white/70">
+              {isActive ? formatTime(currentTime) : "0:00"} / {isActive && duration > 0 ? formatTime(duration) : "0:30"}
+            </span>
+          </div>
+
+          <div className="text-center">
+            <div className="flex items-center justify-center gap-2" style={{ marginBottom: 4 }}>
+              <h3
+                className="font-display font-bold text-white"
+                style={{ fontSize: 22 }}
+              >
+                {beat.title}
+              </h3>
+              {isFavorited && (
+                <Heart className="h-5 w-5 fill-pink-500 text-pink-500" />
+              )}
+            </div>
             <p
               className="text-text-secondary"
               style={{ fontSize: 14, marginBottom: 12 }}
@@ -152,14 +264,13 @@ export function BeatSwipeCard({
           </div>
         </div>
 
-        {/* Progress bar */}
         <div
           className="absolute bottom-0 left-0 right-0"
           style={{ height: 3, background: "rgba(255,255,255,0.1)" }}
         >
           <div
-            className="h-full rounded-sm"
-            style={{ width: "65%", background: "var(--color-brand-gradient)" }}
+            className="h-full rounded-sm transition-[width] duration-100"
+            style={{ width: `${progress}%`, background: "var(--color-brand-gradient)" }}
           />
         </div>
       </div>

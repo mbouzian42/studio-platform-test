@@ -70,16 +70,21 @@ export async function adminUpdateBeat(
     is_published?: boolean;
   },
 ): Promise<ActionResponse> {
-  const { supabase, isAdmin } = await verifyAdmin();
-  if (!isAdmin) return { success: false, error: "Accès refusé" };
+  try {
+    const { supabase, isAdmin } = await verifyAdmin();
+    if (!isAdmin) return { success: false, error: "Accès refusé" };
 
-  const { error } = await supabase
-    .from("beats")
-    .update(input)
-    .eq("id", beatId);
+    const { error } = await supabase
+      .from("beats")
+      .update(input)
+      .eq("id", beatId);
 
-  if (error) return { success: false, error: error.message };
-  return { success: true, data: undefined };
+    if (error) return { success: false, error: error.message };
+    return { success: true, data: undefined };
+  } catch (err) {
+    console.error("[adminUpdateBeat] Error:", err);
+    return { success: false, error: err instanceof Error ? err.message : "Erreur inconnue" };
+  }
 }
 
 export async function adminDeleteBeat(beatId: string): Promise<ActionResponse> {
