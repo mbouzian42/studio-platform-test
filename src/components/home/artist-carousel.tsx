@@ -5,7 +5,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 
 interface Artist {
   name: string;
-  photo: string;
+  photo: string | null;
 }
 
 export function ArtistCarousel({ artists }: { artists: Artist[] }) {
@@ -55,11 +55,17 @@ export function ArtistCarousel({ artists }: { artists: Artist[] }) {
         {artists.map((artist) => (
           <div key={artist.name} className="artist-vignette">
             <div className="artist-avatar">
-              <img
-                className="artist-photo"
-                src={artist.photo}
-                alt={artist.name}
-              />
+              {artist.photo ? (
+                <img
+                  className="artist-photo"
+                  src={artist.photo}
+                  alt={artist.name}
+                />
+              ) : (
+                <div className="flex h-full w-full items-center justify-center bg-bg-surface text-[10px] text-text-muted">
+                  {artist.name.charAt(0)}
+                </div>
+              )}
             </div>
             <span className="artist-name">{artist.name}</span>
           </div>

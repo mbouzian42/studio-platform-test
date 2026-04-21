@@ -1,4 +1,10 @@
 -- ============================================================================
+-- Studio Platform - Unitary Database Schema (Combined)
+-- Created: 2026-04-11
+-- ============================================================================
+
+-- 1. INITIAL SCHEMA (20260313_initial_schema.sql)
+-- ============================================================================
 -- Studio Platform - Initial Database Schema
 -- ============================================================================
 -- Tables: profiles, studios, studio_pricing, engineers, bookings,
@@ -497,4 +503,187 @@ CREATE POLICY "Admins can manage settings"
   ON platform_settings FOR ALL
   USING (
     EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin')
+  );
+
+-- 2. CONTACT MESSAGES (20260314_contact_messages.sql)
+-- ============================================================================
+-- Contact messages table for homepage contact form (Story 2.1)
+CREATE TABLE IF NOT EXISTS contact_messages (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,
+  email TEXT NOT NULL,
+  subject TEXT NOT NULL,
+  message TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- RLS: only admins can read messages, anyone can insert
+ALTER TABLE contact_messages ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Anyone can submit contact message"
+  ON contact_messages FOR INSERT
+  WITH CHECK (true);
+
+CREATE POLICY "Admins can read contact messages"
+  ON contact_messages FOR SELECT
+  USING (
+    EXISTS (
+      SELECT 1 FROM profiles WHERE profiles.id = auth.uid() AND profiles.role = 'admin'
+    )
+  );
+
+-- 3. SLOT LOCKS (20260315_slot_locks.sql)
+-- ============================================================================
+-- Slot locks table for temporary reservation during payment (Story 3.4)
+CREATE TABLE IF NOT EXISTS slot_locks (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  studio_id UUID NOT NULL REFERENCES studios(id) ON DELETE CASCADE,
+  booking_date DATE NOT NULL,
+  start_time TIME NOT NULL,
+  end_time TIME NOT NULL,
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  locked_until TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Index for availability queries
+CREATE INDEX idx_slot_locks_studio_date ON slot_locks(studio_id, booking_date);
+
+-- RLS
+ALTER TABLE slot_locks ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can create their own locks"
+  ON slot_locks FOR INSERT
+  WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can view active locks"
+  ON slot_locks FOR SELECT
+  USING (true);
+
+CREATE POLICY "Users can delete their own locks"
+  ON slot_locks FOR DELETE
+  USING (auth.uid() = user_id);
+
+-- 4. ADD PHONE TO CONTACT (20260318_add_phone_to_contact.sql)
+-- ============================================================================
+ALTER TABLE contact_messages ADD COLUMN phone TEXT;
+
+-- 5. FIX RLS RECURSION (20260319_fix_rls_recursion.sql)
+-- ============================================================================
+-- ============================================================================
+-- Fix: RLS infinite recursion on profiles table
+-- ============================================================================
+-- The "Admins can view all profiles" policy queries the profiles table
+-- from within a profiles policy, causing infinite recursion (error 42P17).
+-- Solution: Create a SECURITY DEFINER function that bypasses RLS.
+-- ============================================================================
+
+-- Helper function to check admin status without triggering RLS
+CREATE OR REPLACE FUNCTION public.is_admin()
+RETURNS BOOLEAN AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'admin'
+  );
+$$ LANGUAGE sql SECURITY DEFINER STABLE;
+
+-- Drop and recreate the problematic profiles policy
+DROP POLICY IF EXISTS "Admins can view all profiles" ON profiles;
+CREATE POLICY "Admins can view all profiles"
+  ON profiles FOR SELECT
+  USING (public.is_admin());
+
+-- 6. STORAGE BUCKETS (20260330_storage_buckets.sql)
+-- ============================================================================
+-- ============================================================
+-- Storage Buckets for Beat Marketplace
+-- ============================================================
+-- beat-previews: public bucket for cover images + audio previews
+-- beat-files:    private bucket for full beat downloads (signed URLs)
+-- ============================================================
+
+-- Create buckets
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES
+  (
+    'beat-previews',
+    'beat-previews',
+    true,
+    209715200, -- 200MB (stores audio previews + cover images)
+    ARRAY['audio/wav', 'audio/x-wav', 'audio/aiff', 'audio/x-aiff', 'audio/flac', 'image/jpeg', 'image/png', 'image/webp']
+  ),
+  (
+    'beat-files',
+    'beat-files',
+    false,
+    209715200, -- 200MB
+    ARRAY['audio/wav', 'audio/x-wav', 'audio/aiff', 'audio/x-aiff', 'audio/flac']
+  )
+ON CONFLICT (id) DO NOTHING;
+
+-- ============================================================
+-- RLS Policies for beat-previews (public bucket)
+-- ============================================================
+
+-- Anyone can read (public bucket)
+CREATE POLICY "beat-previews: public read"
+  ON storage.objects FOR SELECT
+  TO public
+  USING (bucket_id = 'beat-previews');
+
+-- Authenticated users can upload to their own folder
+CREATE POLICY "beat-previews: auth insert own"
+  ON storage.objects FOR INSERT
+  TO authenticated
+  WITH CHECK (
+    bucket_id = 'beat-previews'
+    AND (storage.foldername(name))[1] = (SELECT auth.uid()::text)
+  );
+
+-- Authenticated users can update their own files
+CREATE POLICY "beat-previews: auth update own"
+  ON storage.objects FOR UPDATE
+  TO authenticated
+  USING (
+    bucket_id = 'beat-previews'
+    AND (storage.foldername(name))[1] = (SELECT auth.uid()::text)
+  );
+
+-- Authenticated users can delete their own files
+CREATE POLICY "beat-previews: auth delete own"
+  ON storage.objects FOR DELETE
+  TO authenticated
+  USING (
+    bucket_id = 'beat-previews'
+    AND (storage.foldername(name))[1] = (SELECT auth.uid()::text)
+  );
+
+-- ============================================================
+-- RLS Policies for beat-files (private bucket)
+-- ============================================================
+
+-- Authenticated users can upload to their own folder
+CREATE POLICY "beat-files: auth insert own"
+  ON storage.objects FOR INSERT
+  TO authenticated
+  WITH CHECK (
+    bucket_id = 'beat-files'
+    AND (storage.foldername(name))[1] = (SELECT auth.uid()::text)
+  );
+
+-- Authenticated users can update their own files
+CREATE POLICY "beat-files: auth update own"
+  ON storage.objects FOR UPDATE
+  TO authenticated
+  USING (
+    bucket_id = 'beat-files'
+    AND (storage.foldername(name))[1] = (SELECT auth.uid()::text)
+  );
+
+-- Authenticated users can delete their own files
+CREATE POLICY "beat-files: auth delete own"
+  ON storage.objects FOR DELETE
+  TO authenticated
+  USING (
+    bucket_id = 'beat-files'
+    AND (storage.foldername(name))[1] = (SELECT auth.uid()::text)
   );

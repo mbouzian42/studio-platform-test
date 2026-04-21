@@ -520,6 +520,25 @@ export type Database = {
         };
         Relationships: [];
       };
+      favorites: {
+        Row: {
+          id: string;
+          user_id: string;
+          beat_id: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          beat_id: string;
+          created_at?: string;
+        };
+        Update: {
+          user_id?: string;
+          beat_id?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;

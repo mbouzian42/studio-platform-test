@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Space_Grotesk, Inter, JetBrains_Mono } from "next/font/google";
 import { siteConfig } from "@/config/site";
 import { Toaster } from "@/components/ui/toaster";
+import { GlobalAudioPlayer } from "@/components/shared/global-audio-player";
 import "./globals.css";
 
 const spaceGrotesk = Space_Grotesk({
@@ -43,6 +44,7 @@ export default function RootLayout({
       <body className="min-h-screen bg-bg-primary text-text-primary antialiased">
         {children}
         <Toaster />
+        <GlobalAudioPlayer />
       </body>
     </html>
   );

@@ -2,7 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import type { ActionResponse } from "@/types";
-import type { Beat, BeatPurchase, LicenseType } from "@/types";
+import type { Beat, BeatPurchase, LicenseType, Favorite } from "@/types";
 import { createCheckoutSession } from "@/lib/stripe";
 
 export async function getPublishedBeats(): Promise<ActionResponse<Beat[]>> {
@@ -290,12 +290,21 @@ export async function createBeat(input: {
   return { success: true, data };
 }
 
-const AUDIO_EXTENSIONS = [".wav", ".aiff", ".flac"];
+const AUDIO_EXTENSIONS = [".wav", ".mp3", ".aiff", ".flac"];
 const IMAGE_EXTENSIONS = [".jpg", ".jpeg", ".png", ".webp"];
 const MAX_AUDIO_SIZE = 200 * 1024 * 1024; // 200MB
 const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10MB
 
-const VALID_AUDIO_MIMES = ["audio/wav", "audio/x-wav", "audio/aiff", "audio/x-aiff", "audio/flac"];
+const VALID_AUDIO_MIMES = [
+  "audio/wav",
+  "audio/x-wav",
+  "audio/wave",
+  "audio/mpeg",
+  "audio/mp3",
+  "audio/aiff",
+  "audio/x-aiff",
+  "audio/flac",
+];
 const VALID_IMAGE_MIMES = ["image/jpeg", "image/png", "image/webp"];
 
 function getExtension(filename: string): string {
@@ -446,11 +455,14 @@ export async function createBeatWithFiles(
       .single<Beat>();
 
     if (updateErr || !updatedBeat) {
+      console.error("[createBeatWithFiles] Update record failed:", updateErr);
       throw new Error(updateErr?.message ?? "Erreur mise à jour beat");
     }
 
+    console.log("[createBeatWithFiles] Success:", updatedBeat.id);
     return { success: true, data: updatedBeat };
   } catch (err) {
+    console.error("[createBeatWithFiles] Catch block error:", err);
     // Cleanup on failure: delete beat record and any uploaded files
     try {
       await supabase.from("beats").delete().eq("id", beat.id);
@@ -619,4 +631,75 @@ export async function getBeatmakerSales(): Promise<ActionResponse<BeatmakerSales
   }));
 
   return { success: true, data: { totalSold, totalRevenue, salesByBeat, recentSales } };
+}
+
+// ── Favorites ──
+
+export async function addToFavorites(beatId: string): Promise<ActionResponse> {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { success: false, error: "Connexion requise" };
+
+  const { error } = await supabase.from("favorites").insert({
+    user_id: user.id,
+    beat_id: beatId,
+  });
+
+  if (error) {
+    // Handle unique constraint violation (already favorited)
+    if (error.code === "23505") {
+      return { success: true, data: undefined };
+    }
+    return { success: false, error: error.message };
+  }
+
+  // Optional: Increment like_count on the beat
+  await (supabase.rpc as any)("increment_like_count", { beat_id: beatId });
+
+  return { success: true, data: undefined };
+}
+
+export async function removeFromFavorites(
+  beatId: string,
+): Promise<ActionResponse> {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { success: false, error: "Connexion requise" };
+
+  const { error } = await supabase
+    .from("favorites")
+    .delete()
+    .eq("user_id", user.id)
+    .eq("beat_id", beatId);
+
+  if (error) return { success: false, error: error.message };
+  
+  // Optional: Decrement like_count on the beat
+  await (supabase.rpc as any)("decrement_like_count", { beat_id: beatId });
+
+  return { success: true, data: undefined };
+}
+
+export async function getUserFavorites(): Promise<ActionResponse<Favorite[]>> {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { success: false, error: "Connexion requise" };
+
+  const { data, error } = await supabase
+    .from("favorites")
+    .select("*, beat:beats(*)")
+    .eq("user_id", user.id)
+    .order("created_at", { ascending: false });
+
+  if (error) return { success: false, error: error.message };
+  return { success: true, data: (data as any) || [] };
 }
