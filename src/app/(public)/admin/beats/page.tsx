@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Eye, EyeOff, Trash2, Music } from "lucide-react";
+import { ArrowLeft, Eye, EyeOff, Trash2, Music, Plus } from "lucide-react";
 import { checkAdminAccess } from "@/actions/admin";
 import {
   getAdminBeats,
@@ -127,6 +127,14 @@ export default function AdminBeatsCatalogPage() {
       <p className="mt-1 text-sm text-text-secondary">
         {beats.length} beat{beats.length > 1 ? "s" : ""} au total
       </p>
+
+      <Link
+        href="/admin/beats/upload"
+        className="mt-6 inline-flex items-center gap-2 rounded-lg bg-brand-gradient px-4 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+      >
+        <Plus className="h-4 w-4" />
+        Uploader un beat
+      </Link>
 
       <div className="mt-8 space-y-3">
         {beats.length === 0 ? (

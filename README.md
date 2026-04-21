@@ -66,6 +66,7 @@ supabase/migrations/20260315_slot_locks.sql
 supabase/migrations/20260318_add_phone_to_contact.sql
 supabase/migrations/20260319_fix_rls_recursion.sql
 supabase/migrations/20260330_storage_buckets.sql
+supabase/migrations/20260411_beat_favorites_and_mp3_storage.sql
 ```
 
 Then run the seed file:
