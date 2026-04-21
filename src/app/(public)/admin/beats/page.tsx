@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { Plus } from "lucide-react";
+import { BeatUploadForm } from "@/components/beats/beat-upload-form";
 import { ArrowLeft, Eye, EyeOff, Trash2, Music } from "lucide-react";
 import { checkAdminAccess } from "@/actions/admin";
 import {
@@ -26,6 +28,7 @@ export default function AdminBeatsCatalogPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editPrice, setEditPrice] = useState(0);
   const [editPriceExcl, setEditPriceExcl] = useState(0);
+  const [showUploadForm, setShowUploadForm] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -60,19 +63,23 @@ export default function AdminBeatsCatalogPage() {
     });
   }
 
-  async function handleDelete(beatId: string) {
+async function handleDelete(beatId: string) {
+  try {
     const result = await adminDeleteBeat(beatId);
     if (!result.success) {
       toast({ title: "Erreur", description: result.error, variant: "error" });
       return;
     }
-    setBeats((prev) =>
-      prev.map((b) =>
-        b.id === beatId ? { ...b, is_published: false } : b,
-      ),
-    );
-    toast({ title: "Beat retiré de la marketplace", variant: "success" });
+    setBeats((prev) => prev.filter((b) => b.id !== beatId));
+    toast({ title: "Beat supprimé", variant: "success" });
+  } catch (err) {
+    toast({
+      title: "Erreur inattendue",
+      description: err instanceof Error ? err.message : "Erreur serveur",
+      variant: "error",
+    });
   }
+}
 
   async function handleSavePrice(beatId: string) {
     const result = await adminUpdateBeat(beatId, {
@@ -121,9 +128,39 @@ export default function AdminBeatsCatalogPage() {
         Dashboard
       </Link>
 
-      <h1 className="font-display text-[30px] font-bold leading-tight">
-        Catalogue Beats
-      </h1>
+        <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="font-display text-[30px] font-bold leading-tight">
+            Catalogue Beats
+          </h1>
+          <p className="mt-1 text-sm text-text-secondary">
+            {beats.length} beat{beats.length > 1 ? "s" : ""} au total
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setShowUploadForm((v) => !v)}
+          className="flex items-center gap-1.5 rounded-xl bg-brand-gradient px-4 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+        >
+          <Plus className="h-4 w-4" />
+          Nouveau beat
+        </button>
+      </div>
+
+      {showUploadForm && (
+        <div className="mt-6">
+          <BeatUploadForm
+            onSuccess={async () => {
+          setShowUploadForm(false);
+          setTimeout(async () => {
+            const result = await getAdminBeats();
+            if (result.success) setBeats(result.data);
+          }, 150);
+        }}
+            onCancel={() => setShowUploadForm(false)}
+          />
+        </div>
+      )}
       <p className="mt-1 text-sm text-text-secondary">
         {beats.length} beat{beats.length > 1 ? "s" : ""} au total
       </p>
