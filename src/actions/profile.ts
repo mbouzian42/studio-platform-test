@@ -78,17 +78,10 @@ export async function deleteAccount(): Promise<ActionResponse> {
 
   // Delete associated data (RLS ensures only own data)
   // Order matters: delete children before parent
-  await supabase.from("mixing_revisions").delete().in(
-    "mixing_order_id",
-    (await supabase.from("mixing_orders").select("id").eq("user_id", user.id)).data?.map((o) => o.id) ?? [],
-  );
-  await supabase.from("mixing_stems").delete().in(
-    "mixing_order_id",
-    (await supabase.from("mixing_orders").select("id").eq("user_id", user.id)).data?.map((o) => o.id) ?? [],
-  );
-  await supabase.from("mixing_orders").delete().eq("user_id", user.id);
+  // TODO: Add back mixing_orders, bookings, etc. when those tables are created
   await supabase.from("beat_purchases").delete().eq("user_id", user.id);
-  await supabase.from("bookings").delete().eq("user_id", user.id);
+  // @ts-ignore - beat_favorites exists in DB but we might need to delete it too
+  await supabase.from("beat_favorites").delete().eq("user_id", user.id);
   await supabase.from("profiles").delete().eq("id", user.id);
 
   // TODO: Send confirmation email via Resend

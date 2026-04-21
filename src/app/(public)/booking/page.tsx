@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import type { Metadata } from "next";
 import { getStudios } from "@/actions/booking";
 
@@ -66,12 +67,13 @@ export default async function BookingPage() {
               href={`/booking/${slug}`}
               className="studio-booking-card block overflow-hidden rounded-xl border border-border-subtle bg-bg-elevated transition-all hover:border-purple-500"
             >
-              <div className="h-[140px] w-full overflow-hidden">
+              <div className="relative h-[140px] w-full overflow-hidden">
                 {studio.image ? (
-                  <img
+                  <Image
                     src={studio.image}
                     alt={`Studio ${studio.name}`}
-                    className="h-full w-full object-cover"
+                    fill
+                    className="object-cover"
                   />
                 ) : (
                   <div

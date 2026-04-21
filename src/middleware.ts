@@ -31,7 +31,12 @@ export async function middleware(request: NextRequest) {
 
   const {
     data: { user },
+    error,
   } = await supabase.auth.getUser();
+
+  if (error && error.message !== "Auth session missing!") {
+    console.error("Middleware getUser error:", error.message, error);
+  }
 
   const { pathname } = request.nextUrl;
 

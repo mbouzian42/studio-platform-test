@@ -3,10 +3,13 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Music } from "lucide-react";
+import Link from "next/link";
 import { getPublishedBeats } from "@/actions/beats";
 import { BeatSwipeCard } from "@/components/beats/beat-swipe-card";
 import { BeatsOnboarding } from "@/components/beats/beats-onboarding";
-import { MOCK_BEATS } from "@/lib/mock-beats";
+import { useAudioStore } from "@/stores/audio-store";
+import { toggleFavorite } from "@/actions/favorites";
+import { AudioPlayer } from "@/components/beats/audio-player";
 import type { Beat } from "@/types";
 
 export default function BeatsPage() {
@@ -17,10 +20,14 @@ export default function BeatsPage() {
   const animatingRef = useRef(false);
   const [loading, setLoading] = useState(true);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const { play, stop, isPlaying } = useAudioStore();
+  const [hasInteracted, setHasInteracted] = useState(false);
 
   useEffect(() => {
-    // Check localStorage after mount (avoids SSR/hydration mismatch)
-    if (!localStorage.getItem("studio_beats_onboarded")) {
+    // Check localStorage after mount
+    const onboarded = localStorage.getItem("studio_beats_onboarded");
+    if (!onboarded) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setShowOnboarding(true);
     }
 
@@ -28,13 +35,26 @@ export default function BeatsPage() {
       const result = await getPublishedBeats();
       if (result.success && result.data.length > 0) {
         setBeats(result.data);
-      } else {
-        setBeats(MOCK_BEATS);
       }
       setLoading(false);
     }
     load();
   }, []);
+
+  // Autoplay effect
+  useEffect(() => {
+    if (!loading && beats.length > 0 && beats[currentIndex] && (hasInteracted || !showOnboarding)) {
+      const beat = beats[currentIndex];
+      if (beat.audio_preview_url) {
+        play(beat.id, beat.audio_preview_url);
+      }
+    }
+  }, [currentIndex, beats, loading, play, hasInteracted, showOnboarding]);
+
+  // Clean up audio on unmount
+  useEffect(() => {
+    return () => stop();
+  }, [stop]);
 
   const handleOnboardingComplete = useCallback(() => {
     localStorage.setItem("studio_beats_onboarded", "true");
@@ -46,17 +66,19 @@ export default function BeatsPage() {
       if (animatingRef.current) return;
       animatingRef.current = true;
       setExitDirection(direction);
+      stop(); // Stop audio on swipe
 
       setTimeout(() => {
         if (direction === "right" && beats[currentIndex]) {
-          router.push(`/beats/${beats[currentIndex].slug}`);
+          // Add to favorites on right swipe
+          toggleFavorite(beats[currentIndex].id);
         }
         setCurrentIndex((i) => i + 1);
         setExitDirection(null);
         animatingRef.current = false;
       }, 400);
     },
-    [beats, currentIndex, router],
+    [beats, currentIndex, stop],
   );
 
   const handleSwipeLeft = useCallback(() => {
@@ -88,12 +110,12 @@ export default function BeatsPage() {
         <p className="mt-2 text-sm text-text-secondary">
           Notre catalogue est en cours de préparation. Reviens vite.
         </p>
-        <a
+        <Link
           href="/booking"
           className="mt-6 inline-flex items-center gap-2 rounded-lg bg-brand-gradient px-6 py-3 text-sm font-semibold text-white transition-opacity hover:opacity-90"
         >
           Réserver une session
-        </a>
+        </Link>
       </div>
     );
   }
@@ -125,7 +147,10 @@ export default function BeatsPage() {
   return (
     <>
       {showOnboarding && (
-        <BeatsOnboarding onComplete={handleOnboardingComplete} />
+        <BeatsOnboarding onComplete={() => {
+          handleOnboardingComplete();
+          setHasInteracted(true);
+        }} />
       )}
 
       <div className="beat-swipe-screen">
@@ -162,6 +187,14 @@ export default function BeatsPage() {
               onSwipeRight={handleSwipeRight}
             />
           </div>
+        </div>
+
+        {/* Global Player for active beat */}
+        <div className="mx-auto mt-6 w-full max-w-[340px] rounded-2xl bg-bg-surface/50 p-4 backdrop-blur-sm border border-border-subtle/50">
+          <AudioPlayer 
+            beatId={beats[currentIndex].id} 
+            previewUrl={beats[currentIndex].audio_preview_url} 
+          />
         </div>
 
         {/* Action buttons — prototype style */}

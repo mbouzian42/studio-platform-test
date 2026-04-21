@@ -39,7 +39,7 @@ export default function AdminCalendarPage() {
   }, [selectedDate, router]);
 
   useEffect(() => {
-    async function init() {
+    async function initAndLoad() {
       const access = await checkAdminAccess();
       if (!access.success || !access.data.isAdmin) {
         router.push("/");
@@ -47,12 +47,8 @@ export default function AdminCalendarPage() {
       }
       loadData();
     }
-    init();
+    initAndLoad();
   }, [loadData, router]);
-
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
 
   function changeDate(days: number) {
     const d = new Date(selectedDate + "T00:00:00");

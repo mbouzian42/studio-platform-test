@@ -2,10 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import Image from "next/image";
+
 
 interface Artist {
   name: string;
-  photo: string;
+  photo: string | null;
 }
 
 export function ArtistCarousel({ artists }: { artists: Artist[] }) {
@@ -55,11 +57,30 @@ export function ArtistCarousel({ artists }: { artists: Artist[] }) {
         {artists.map((artist) => (
           <div key={artist.name} className="artist-vignette">
             <div className="artist-avatar">
-              <img
-                className="artist-photo"
-                src={artist.photo}
-                alt={artist.name}
-              />
+              {artist.photo ? (
+                <Image
+                  className="artist-photo"
+                  src={artist.photo}
+                  alt={artist.name}
+                  width={48}
+                  height={48}
+                />
+              ) : (
+                <div
+                  className="artist-photo"
+                  style={{
+                    background: "linear-gradient(135deg, #4a1a8a, #8b5cf6)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: 18,
+                    fontWeight: 700,
+                    color: "white",
+                  }}
+                >
+                  {artist.name.charAt(0)}
+                </div>
+              )}
             </div>
             <span className="artist-name">{artist.name}</span>
           </div>

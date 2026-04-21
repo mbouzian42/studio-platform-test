@@ -255,6 +255,7 @@ export async function createBeat(input: {
   tags: string[];
   priceSimple: number;
   priceExclusive: number | null;
+  isPublished?: boolean;
 }): Promise<ActionResponse<Beat>> {
   const supabase = await createClient();
 
@@ -280,7 +281,7 @@ export async function createBeat(input: {
       tags: input.tags,
       price_simple: input.priceSimple,
       price_exclusive: input.priceExclusive,
-      is_published: false,
+      is_published: input.isPublished ?? false,
       is_exclusive_sold: false,
     })
     .select()
@@ -290,12 +291,18 @@ export async function createBeat(input: {
   return { success: true, data };
 }
 
-const AUDIO_EXTENSIONS = [".wav", ".aiff", ".flac"];
+const AUDIO_EXTENSIONS = [".wav", ".aiff", ".flac", ".mp3", ".m4a"];
 const IMAGE_EXTENSIONS = [".jpg", ".jpeg", ".png", ".webp"];
 const MAX_AUDIO_SIZE = 200 * 1024 * 1024; // 200MB
 const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10MB
 
-const VALID_AUDIO_MIMES = ["audio/wav", "audio/x-wav", "audio/aiff", "audio/x-aiff", "audio/flac"];
+const VALID_AUDIO_MIMES = [
+  "audio/wav", "audio/x-wav", "audio/vnd.wave", 
+  "audio/aiff", "audio/x-aiff", 
+  "audio/flac", 
+  "audio/mpeg", "audio/mp3", 
+  "audio/mp4", "audio/x-m4a"
+];
 const VALID_IMAGE_MIMES = ["image/jpeg", "image/png", "image/webp"];
 
 function getExtension(filename: string): string {
@@ -334,16 +341,24 @@ export async function createBeatWithFiles(
     return { success: false, error: "Fichiers audio, image et métadonnées requis" };
   }
 
-  // Validate files (extension + MIME type)
+  // Validate files (extension)
   const audioExt = getExtension(audioFile.name);
   if (!audioExt || !AUDIO_EXTENSIONS.includes(audioExt)) {
     return { success: false, error: `Format audio non supporté : ${audioExt || "inconnu"}` };
   }
   if (!VALID_AUDIO_MIMES.includes(audioFile.type)) {
-    return { success: false, error: `Type MIME audio non supporté : ${audioFile.type}` };
+    console.warn(`Type MIME audio inconnu ou non standard (${audioFile.type}), mais on continue.`);
   }
   if (audioFile.size > MAX_AUDIO_SIZE) {
     return { success: false, error: "Fichier audio trop volumineux (max 200 Mo)" };
+  }
+
+  const previewFile = formData.get("preview") as File | null;
+  if (previewFile) {
+    const previewExt = getExtension(previewFile.name);
+    if (!previewExt || !AUDIO_EXTENSIONS.includes(previewExt)) {
+      return { success: false, error: `Format preview non supporté : ${previewExt || "inconnu"}` };
+    }
   }
 
   const coverExt = getExtension(coverFile.name);
@@ -366,6 +381,7 @@ export async function createBeatWithFiles(
     tags: string[];
     priceSimple: number;
     priceExclusive: number | null;
+    isPublished?: boolean;
   };
   try {
     metadata = JSON.parse(metadataRaw);
@@ -391,7 +407,7 @@ export async function createBeatWithFiles(
       tags: metadata.tags,
       price_simple: metadata.priceSimple,
       price_exclusive: metadata.priceExclusive,
-      is_published: false,
+      is_published: metadata.isPublished ?? false,
       is_exclusive_sold: false,
     })
     .select()
@@ -406,23 +422,28 @@ export async function createBeatWithFiles(
   try {
     // Step 2: Upload cover image to beat-previews
     const coverPath = `${basePath}/cover${coverExt}`;
+    const coverBuffer = await coverFile.arrayBuffer();
     const { error: coverErr } = await supabase.storage
       .from("beat-previews")
-      .upload(coverPath, coverFile, { upsert: true });
+      .upload(coverPath, coverBuffer, { upsert: true, contentType: coverFile.type });
     if (coverErr) throw new Error(`Cover upload: ${coverErr.message}`);
 
     // Step 3: Upload full audio to beat-files (private)
     const audioPath = `${basePath}/audio${audioExt}`;
+    const audioBuffer = await audioFile.arrayBuffer();
     const { error: audioErr } = await supabase.storage
       .from("beat-files")
-      .upload(audioPath, audioFile, { upsert: true });
+      .upload(audioPath, audioBuffer, { upsert: true, contentType: audioFile.type });
     if (audioErr) throw new Error(`Audio upload: ${audioErr.message}`);
 
-    // Step 4: Upload same audio to beat-previews (public preview)
-    const previewPath = `${basePath}/preview${audioExt}`;
+    // Step 4: Upload preview audio to beat-previews (public preview)
+    const previewToUpload = previewFile || audioFile;
+    const previewExt = getExtension(previewToUpload.name);
+    const previewPath = `${basePath}/preview${previewExt}`;
+    const previewBuffer = await previewToUpload.arrayBuffer();
     const { error: previewErr } = await supabase.storage
       .from("beat-previews")
-      .upload(previewPath, audioFile, { upsert: true });
+      .upload(previewPath, previewBuffer, { upsert: true, contentType: previewToUpload.type });
     if (previewErr) throw new Error(`Preview upload: ${previewErr.message}`);
 
     // Step 5: Get public URLs
@@ -506,6 +527,46 @@ export async function updateBeat(
 
   if (error || !data) return { success: false, error: error?.message ?? "Erreur" };
   return { success: true, data };
+}
+
+export async function finalizeBeatUpload(
+  beatId: string,
+  urls: {
+    cover_image_url: string;
+    audio_preview_url: string | null;
+    audio_full_url: string;
+  },
+  isPublished: boolean
+): Promise<ActionResponse<Beat>> {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { success: false, error: "Non connecté" };
+
+  const { data, error } = await supabase
+    .from("beats")
+    .update({
+      cover_image_url: urls.cover_image_url,
+      audio_preview_url: urls.audio_preview_url,
+      audio_full_url: urls.audio_full_url,
+      is_published: isPublished
+    })
+    .eq("id", beatId)
+    .eq("beatmaker_id", user.id)
+    .select()
+    .single<Beat>();
+
+  if (error || !data) return { success: false, error: error?.message ?? "Erreur mise à jour" };
+  return { success: true, data };
+}
+
+export async function deleteDraftBeat(beatId: string): Promise<void> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return;
+  await supabase.from("beats").delete().eq("id", beatId).eq("beatmaker_id", user.id);
 }
 
 export async function toggleBeatPublish(

@@ -5,7 +5,7 @@ import { HomeContactForm } from "@/components/home/contact-form";
 import { TeamSection } from "@/components/home/team-section";
 import { ArtistCarousel } from "@/components/home/artist-carousel";
 
-const ARTISTS = [
+const ARTISTS: { name: string; photo: string | null }[] = [
   { name: "Artist 1", photo: null },
   { name: "Artist 2", photo: null },
   { name: "Artist 3", photo: null },
@@ -86,9 +86,14 @@ export default function HomePage() {
           <div className="studio-scroll">
             {STUDIOS.map((studio) => (
               <Link key={studio.name} href="/booking" className="studio-card">
-                <div className="studio-card-image">
+                <div className="relative studio-card-image">
                   {studio.image ? (
-                    <img src={studio.image} alt={`Studio ${studio.name}`} className="h-full w-full object-cover" />
+                    <Image
+                      src={studio.image}
+                      alt={`Studio ${studio.name}`}
+                      fill
+                      className="object-cover"
+                    />
                   ) : (
                     <div className="h-full w-full" style={{ background: "linear-gradient(135deg, #1a1a2e 0%, #16213e 40%, #0f3460 100%)" }} />
                   )}

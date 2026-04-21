@@ -15,7 +15,7 @@ export interface AdminKPIs {
   pendingBookings: number;
 }
 
-export async function checkAdminAccess(): Promise<ActionResponse<{ isAdmin: boolean }>> {
+export async function checkAdminAccess(): Promise<ActionResponse<{ isAdmin: boolean; isEngineer: boolean }>> {
   const supabase = await createClient();
 
   const {
@@ -29,11 +29,11 @@ export async function checkAdminAccess(): Promise<ActionResponse<{ isAdmin: bool
     .eq("id", user.id)
     .single<{ role: string }>();
 
-  if (!profile || profile.role !== "admin") {
-    return { success: true, data: { isAdmin: false } };
+  if (!profile || (profile.role !== "admin" && profile.role !== "engineer")) {
+    return { success: true, data: { isAdmin: profile?.role === "admin", isEngineer: profile?.role === "engineer" } };
   }
 
-  return { success: true, data: { isAdmin: true } };
+  return { success: true, data: { isAdmin: profile.role === "admin", isEngineer: true } };
 }
 
 export async function getAdminKPIs(): Promise<ActionResponse<AdminKPIs>> {
