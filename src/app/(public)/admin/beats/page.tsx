@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Eye, EyeOff, Trash2, Music } from "lucide-react";
+import { ArrowLeft, Eye, EyeOff, Trash2, Music, Plus } from "lucide-react";
 import { checkAdminAccess } from "@/actions/admin";
 import {
   getAdminBeats,
@@ -66,12 +66,8 @@ export default function AdminBeatsCatalogPage() {
       toast({ title: "Erreur", description: result.error, variant: "error" });
       return;
     }
-    setBeats((prev) =>
-      prev.map((b) =>
-        b.id === beatId ? { ...b, is_published: false } : b,
-      ),
-    );
-    toast({ title: "Beat retiré de la marketplace", variant: "success" });
+    setBeats((prev) => prev.filter((b) => b.id !== beatId));
+    toast({ title: "Beat supprimé", variant: "success" });
   }
 
   async function handleSavePrice(beatId: string) {
@@ -121,12 +117,23 @@ export default function AdminBeatsCatalogPage() {
         Dashboard
       </Link>
 
-      <h1 className="font-display text-[30px] font-bold leading-tight">
-        Catalogue Beats
-      </h1>
-      <p className="mt-1 text-sm text-text-secondary">
-        {beats.length} beat{beats.length > 1 ? "s" : ""} au total
-      </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="font-display text-[30px] font-bold leading-tight">
+            Catalogue Beats
+          </h1>
+          <p className="mt-1 text-sm text-text-secondary">
+            {beats.length} beat{beats.length > 1 ? "s" : ""} au total
+          </p>
+        </div>
+        <Link
+          href="/admin/beats/upload"
+          className="flex items-center gap-2 rounded-lg bg-brand-gradient px-4 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+        >
+          <Plus className="h-4 w-4" />
+          Upload
+        </Link>
+      </div>
 
       <div className="mt-8 space-y-3">
         {beats.length === 0 ? (

@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from "react";
 import type { Beat } from "@/types";
+import { AudioPlayer } from "./audio-player";
 
 interface BeatSwipeCardProps {
   beat: Beat;
@@ -148,6 +149,15 @@ export function BeatSwipeCard({
               {beat.bpm && <span className="pill">{beat.bpm} BPM</span>}
               {beat.key && <span className="pill">{beat.key}</span>}
               {beat.genre && <span className="pill">{beat.genre}</span>}
+            </div>
+
+            {/* Audio player */}
+            <div className="mt-3">
+              <AudioPlayer
+                beatId={beat.id}
+                previewUrl={beat.audio_preview_url}
+                compact={false}
+              />
             </div>
           </div>
         </div>

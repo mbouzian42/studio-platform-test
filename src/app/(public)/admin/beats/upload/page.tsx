@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
-import { createBeatWithFiles } from "@/actions/beats";
+import { checkAdminAccess } from "@/actions/admin";
+import { createBeatWithFiles, toggleBeatPublish } from "@/actions/beats";
 import { BeatFileUploader } from "@/components/beats/beat-file-uploader";
 import { toast } from "@/components/ui/toaster";
 
@@ -18,8 +19,9 @@ const KEYS = [
   "Cm", "C#m", "Dm", "D#m", "Em", "Fm", "F#m", "Gm", "G#m", "Am", "A#m", "Bm",
 ];
 
-export default function BeatUploadPage() {
+export default function AdminBeatUploadPage() {
   const router = useRouter();
+  const [authorized, setAuthorized] = useState(false);
 
   const [title, setTitle] = useState("");
   const [bpm, setBpm] = useState(140);
@@ -28,10 +30,23 @@ export default function BeatUploadPage() {
   const [tags, setTags] = useState("");
   const [priceSimple, setPriceSimple] = useState(35);
   const [priceExclusive, setPriceExclusive] = useState(199);
+  const [publishOnCreate, setPublishOnCreate] = useState(false);
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [coverFile, setCoverFile] = useState<File | null>(null);
   const [pending, setPending] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    async function check() {
+      const access = await checkAdminAccess();
+      if (!access.success || !access.data.isAdmin) {
+        router.push("/");
+        return;
+      }
+      setAuthorized(true);
+    }
+    check();
+  }, [router]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -75,23 +90,41 @@ export default function BeatUploadPage() {
       return;
     }
 
+    // If publish toggle is on, publish immediately
+    if (publishOnCreate && result.data) {
+      await toggleBeatPublish(result.data.id, true);
+    }
+
     toast({
-      title: "Beat créé !",
-      description: "Ton beat a été uploadé et enregistré en brouillon.",
+      title: publishOnCreate ? "Beat publié !" : "Beat créé en brouillon",
+      description: publishOnCreate
+        ? "Le beat est visible sur la marketplace."
+        : "Tu peux le publier depuis le catalogue.",
       variant: "success",
     });
 
-    router.push("/engineer/beats");
+    router.push("/admin/beats");
+  }
+
+  if (!authorized) {
+    return (
+      <div className="px-4 pt-6 pb-24 md:px-8 md:pt-8">
+        <div className="animate-pulse space-y-4">
+          <div className="h-8 w-48 rounded-lg bg-bg-surface" />
+          <div className="h-64 rounded-lg bg-bg-surface" />
+        </div>
+      </div>
+    );
   }
 
   return (
     <div className="mx-auto max-w-[600px] px-4 py-12 md:px-6 md:py-20">
       <Link
-        href="/engineer/beats"
+        href="/admin/beats"
         className="mb-6 inline-flex items-center gap-1.5 text-sm text-text-muted transition-colors hover:text-text-primary"
       >
         <ArrowLeft className="h-4 w-4" />
-        Mes beats
+        Catalogue Beats
       </Link>
 
       <h1 className="font-display text-2xl font-bold md:text-3xl">
@@ -209,10 +242,7 @@ export default function BeatUploadPage() {
         {/* Pricing */}
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label
-              htmlFor="priceSimple"
-              className="mb-1.5 block text-sm font-medium"
-            >
+            <label htmlFor="priceSimple" className="mb-1.5 block text-sm font-medium">
               Prix licence simple (€) *
             </label>
             <input
@@ -225,10 +255,7 @@ export default function BeatUploadPage() {
             />
           </div>
           <div>
-            <label
-              htmlFor="priceExclusive"
-              className="mb-1.5 block text-sm font-medium"
-            >
+            <label htmlFor="priceExclusive" className="mb-1.5 block text-sm font-medium">
               Prix licence exclusive (€)
             </label>
             <input
@@ -236,9 +263,7 @@ export default function BeatUploadPage() {
               type="number"
               min={0}
               value={priceExclusive}
-              onChange={(e) =>
-                setPriceExclusive(parseInt(e.target.value) || 0)
-              }
+              onChange={(e) => setPriceExclusive(parseInt(e.target.value) || 0)}
               className="w-full rounded-lg border border-border-subtle bg-bg-elevated px-4 py-2.5 text-sm text-text-primary transition-colors focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
             />
             <p className="mt-1 text-xs text-text-muted">
@@ -247,12 +272,39 @@ export default function BeatUploadPage() {
           </div>
         </div>
 
+        {/* Publish / Draft toggle */}
+        <div className="flex items-center justify-between rounded-lg border border-border-subtle bg-bg-elevated p-4">
+          <div>
+            <p className="text-sm font-medium">Publier immédiatement</p>
+            <p className="text-xs text-text-muted">
+              {publishOnCreate
+                ? "Le beat sera visible sur la marketplace dès sa création"
+                : "Le beat sera enregistré en brouillon"}
+            </p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={publishOnCreate}
+            onClick={() => setPublishOnCreate(!publishOnCreate)}
+            className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${
+              publishOnCreate ? "bg-purple-600" : "bg-bg-hover"
+            }`}
+          >
+            <span
+              className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
+                publishOnCreate ? "translate-x-5" : "translate-x-0"
+              }`}
+            />
+          </button>
+        </div>
+
         {errors.form && <p className="text-sm text-error">{errors.form}</p>}
 
         {/* Submit */}
         <div className="flex gap-3">
           <Link
-            href="/engineer/beats"
+            href="/admin/beats"
             className="flex-1 rounded-lg border border-border-default px-6 py-3 text-center text-sm font-medium text-text-primary transition-colors hover:bg-bg-hover"
           >
             Annuler
@@ -262,7 +314,11 @@ export default function BeatUploadPage() {
             disabled={pending}
             className="flex-1 rounded-lg bg-brand-gradient px-6 py-3 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
           >
-            {pending ? "Création..." : "Enregistrer en brouillon"}
+            {pending
+              ? "Création..."
+              : publishOnCreate
+                ? "Créer et publier"
+                : "Enregistrer en brouillon"}
           </button>
         </div>
       </form>
