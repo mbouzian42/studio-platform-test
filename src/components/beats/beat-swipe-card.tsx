@@ -2,6 +2,9 @@
 
 import { useState, useCallback } from "react";
 import type { Beat } from "@/types";
+import { useAudioStore } from "@/stores/audio-store";
+
+const PREVIEW_MAX_SECONDS = 30;
 
 interface BeatSwipeCardProps {
   beat: Beat;
@@ -9,6 +12,8 @@ interface BeatSwipeCardProps {
   onSwipeRight: () => void;
   isTop: boolean;
   exitDirection?: "left" | "right" | null;
+  /** Optional pre-fetched duration hint (seconds) to avoid a UI flash. */
+  durationHint?: number;
 }
 
 const WAVEFORM_BARS = [
@@ -22,10 +27,28 @@ export function BeatSwipeCard({
   onSwipeRight,
   isTop,
   exitDirection,
+  durationHint,
 }: BeatSwipeCardProps) {
   const [dragX, setDragX] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
   const [startX, setStartX] = useState(0);
+
+  const currentBeatId = useAudioStore((s) => s.currentBeatId);
+  const currentTime = useAudioStore((s) => s.currentTime);
+  const duration = useAudioStore((s) => s.duration);
+  const isThisBeatActive = currentBeatId === beat.id;
+  const bestDuration =
+    isThisBeatActive && duration > 0
+      ? duration
+      : durationHint && durationHint > 0
+        ? durationHint
+        : 0;
+  const effectiveDuration =
+    bestDuration > 0 ? Math.min(bestDuration, PREVIEW_MAX_SECONDS) : PREVIEW_MAX_SECONDS;
+  const progressPct =
+    isThisBeatActive && effectiveDuration > 0
+      ? Math.min(100, (currentTime / effectiveDuration) * 100)
+      : 0;
 
   const SWIPE_THRESHOLD = 100;
 
@@ -159,7 +182,11 @@ export function BeatSwipeCard({
         >
           <div
             className="h-full rounded-sm"
-            style={{ width: "65%", background: "var(--color-brand-gradient)" }}
+            style={{
+              width: `${progressPct}%`,
+              background: "var(--color-brand-gradient)",
+              transition: "width 0.1s linear",
+            }}
           />
         </div>
       </div>

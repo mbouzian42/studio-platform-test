@@ -290,12 +290,20 @@ export async function createBeat(input: {
   return { success: true, data };
 }
 
-const AUDIO_EXTENSIONS = [".wav", ".aiff", ".flac"];
+const AUDIO_EXTENSIONS = [".wav", ".mp3", ".aiff", ".flac"];
 const IMAGE_EXTENSIONS = [".jpg", ".jpeg", ".png", ".webp"];
 const MAX_AUDIO_SIZE = 200 * 1024 * 1024; // 200MB
 const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10MB
 
-const VALID_AUDIO_MIMES = ["audio/wav", "audio/x-wav", "audio/aiff", "audio/x-aiff", "audio/flac"];
+const VALID_AUDIO_MIMES = [
+  "audio/wav",
+  "audio/x-wav",
+  "audio/mpeg",
+  "audio/mp3",
+  "audio/aiff",
+  "audio/x-aiff",
+  "audio/flac",
+];
 const VALID_IMAGE_MIMES = ["image/jpeg", "image/png", "image/webp"];
 
 function getExtension(filename: string): string {
@@ -408,21 +416,21 @@ export async function createBeatWithFiles(
     const coverPath = `${basePath}/cover${coverExt}`;
     const { error: coverErr } = await supabase.storage
       .from("beat-previews")
-      .upload(coverPath, coverFile, { upsert: true });
+      .upload(coverPath, coverFile);
     if (coverErr) throw new Error(`Cover upload: ${coverErr.message}`);
 
     // Step 3: Upload full audio to beat-files (private)
     const audioPath = `${basePath}/audio${audioExt}`;
     const { error: audioErr } = await supabase.storage
       .from("beat-files")
-      .upload(audioPath, audioFile, { upsert: true });
+      .upload(audioPath, audioFile);
     if (audioErr) throw new Error(`Audio upload: ${audioErr.message}`);
 
     // Step 4: Upload same audio to beat-previews (public preview)
     const previewPath = `${basePath}/preview${audioExt}`;
     const { error: previewErr } = await supabase.storage
       .from("beat-previews")
-      .upload(previewPath, audioFile, { upsert: true });
+      .upload(previewPath, audioFile);
     if (previewErr) throw new Error(`Preview upload: ${previewErr.message}`);
 
     // Step 5: Get public URLs
@@ -619,4 +627,90 @@ export async function getBeatmakerSales(): Promise<ActionResponse<BeatmakerSales
   }));
 
   return { success: true, data: { totalSold, totalRevenue, salesByBeat, recentSales } };
+}
+
+// ── Favorites ──
+
+export async function addFavorite(
+  beatId: string,
+): Promise<ActionResponse> {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { success: false, error: "Connexion requise" };
+
+  const { error } = await supabase
+    .from("beat_favorites")
+    .insert({ user_id: user.id, beat_id: beatId });
+
+  // Duplicate is not an error for the caller — the beat is already favorited.
+  if (error && error.code !== "23505") {
+    return { success: false, error: error.message };
+  }
+  return { success: true, data: undefined };
+}
+
+export async function removeFavorite(
+  beatId: string,
+): Promise<ActionResponse> {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { success: false, error: "Connexion requise" };
+
+  const { error } = await supabase
+    .from("beat_favorites")
+    .delete()
+    .eq("user_id", user.id)
+    .eq("beat_id", beatId);
+
+  if (error) return { success: false, error: error.message };
+  return { success: true, data: undefined };
+}
+
+export async function getMyFavorites(): Promise<ActionResponse<Beat[]>> {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { success: false, error: "Connexion requise" };
+
+  // Fetch the user's favorites joined with the beat rows.
+  const { data, error } = await supabase
+    .from("beat_favorites")
+    .select("created_at, beat:beats(*)")
+    .eq("user_id", user.id)
+    .order("created_at", { ascending: false })
+    .returns<{ created_at: string; beat: Beat | null }[]>();
+
+  if (error) return { success: false, error: error.message };
+
+  const beats = (data ?? [])
+    .map((row) => row.beat)
+    .filter((b): b is Beat => b !== null);
+
+  return { success: true, data: beats };
+}
+
+export async function getMyFavoriteIds(): Promise<ActionResponse<string[]>> {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { success: true, data: [] };
+
+  const { data, error } = await supabase
+    .from("beat_favorites")
+    .select("beat_id")
+    .eq("user_id", user.id)
+    .returns<{ beat_id: string }[]>();
+
+  if (error) return { success: false, error: error.message };
+  return { success: true, data: (data ?? []).map((r) => r.beat_id) };
 }

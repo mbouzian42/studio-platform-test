@@ -8,9 +8,13 @@ interface AudioPlayerProps {
   beatId: string;
   previewUrl: string | null;
   compact?: boolean;
+  /** Optional pre-fetched duration hint (seconds) to avoid a placeholder flash. */
+  durationHint?: number;
 }
 
-export function AudioPlayer({ beatId, previewUrl, compact }: AudioPlayerProps) {
+const PREVIEW_MAX_SECONDS = 30;
+
+export function AudioPlayer({ beatId, previewUrl, compact, durationHint }: AudioPlayerProps) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const {
     currentBeatId,
@@ -31,7 +35,10 @@ export function AudioPlayer({ beatId, previewUrl, compact }: AudioPlayerProps) {
     const audio = audioRef.current;
 
     if (isActive && isPlaying) {
-      audio.play().catch(() => {});
+      audio.play().catch(() => {
+        // Autoplay blocked (no user gesture yet) — reset store so UI shows paused.
+        useAudioStore.getState().pause();
+      });
     } else {
       audio.pause();
     }
@@ -59,10 +66,17 @@ export function AudioPlayer({ beatId, previewUrl, compact }: AudioPlayerProps) {
   }, [isActive, isPlaying, beatId, previewUrl, play, pause, resume]);
 
   const handleTimeUpdate = useCallback(() => {
-    if (audioRef.current && isActive) {
-      setCurrentTime(audioRef.current.currentTime);
+    if (!audioRef.current || !isActive) return;
+    const t = audioRef.current.currentTime;
+    if (t >= PREVIEW_MAX_SECONDS) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = PREVIEW_MAX_SECONDS;
+      setCurrentTime(PREVIEW_MAX_SECONDS);
+      pause();
+      return;
     }
-  }, [isActive, setCurrentTime]);
+    setCurrentTime(t);
+  }, [isActive, setCurrentTime, pause]);
 
   const handleLoadedMetadata = useCallback(() => {
     if (audioRef.current && isActive) {
@@ -70,17 +84,32 @@ export function AudioPlayer({ beatId, previewUrl, compact }: AudioPlayerProps) {
     }
   }, [isActive, setDuration]);
 
+  // Effective cap: the shorter of the file's real duration and 30s.
+  // Priority: live store duration (for the active beat) → pre-fetched hint
+  // → 30s fallback. The hint prevents a "0:30 → 0:08" flash on shorter files.
+  const bestDuration =
+    isActive && duration > 0
+      ? duration
+      : durationHint && durationHint > 0
+        ? durationHint
+        : 0;
+  const effectiveDuration =
+    bestDuration > 0 ? Math.min(bestDuration, PREVIEW_MAX_SECONDS) : PREVIEW_MAX_SECONDS;
+
   const handleSeek = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
       if (!audioRef.current || !isActive) return;
       const rect = e.currentTarget.getBoundingClientRect();
       const ratio = (e.clientX - rect.left) / rect.width;
-      audioRef.current.currentTime = ratio * audioRef.current.duration;
+      audioRef.current.currentTime = ratio * effectiveDuration;
     },
-    [isActive],
+    [isActive, effectiveDuration],
   );
 
-  const progress = isActive && duration > 0 ? (currentTime / duration) * 100 : 0;
+  const progress =
+    isActive && effectiveDuration > 0
+      ? Math.min(100, (currentTime / effectiveDuration) * 100)
+      : 0;
   const formatTime = (s: number) => {
     const m = Math.floor(s / 60);
     const sec = Math.floor(s % 60);
@@ -131,8 +160,8 @@ export function AudioPlayer({ beatId, previewUrl, compact }: AudioPlayerProps) {
 
             {/* Time */}
             <span className="flex-shrink-0 font-mono text-xs text-text-muted">
-              {isActive ? formatTime(currentTime) : "0:00"} /{" "}
-              {isActive && duration > 0 ? formatTime(duration) : "0:30"}
+              {isActive ? formatTime(Math.min(currentTime, effectiveDuration)) : "0:00"} /{" "}
+              {formatTime(effectiveDuration)}
             </span>
           </>
         )}

@@ -731,7 +731,8 @@ body {
   background-clip: padding-box, border-box;
 }
 
-.swipe-btn-like:hover {
+.swipe-btn-like:hover,
+.swipe-btn-like.is-liked {
   background-image: var(--color-brand-gradient), var(--color-brand-gradient);
   box-shadow: 0 0 20px rgba(139, 92, 246, 0.4);
 }
@@ -741,7 +742,8 @@ body {
   fill: none;
 }
 
-.swipe-btn-like:hover svg {
+.swipe-btn-like:hover svg,
+.swipe-btn-like.is-liked svg {
   stroke: white;
   fill: white;
 }

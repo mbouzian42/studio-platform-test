@@ -22,6 +22,7 @@ export type {
   Engineer,
   Booking,
   Beat,
+  BeatFavorite,
   BeatPurchase,
   MixingOrder,
   MixingStem,
